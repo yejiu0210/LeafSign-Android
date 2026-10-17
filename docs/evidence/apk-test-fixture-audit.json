@@ -1,4 +1,5 @@
 {
-  "TestMarkersPresent": [],
-  "SourceTestFixturesPackaged": false
+  "checkedMarkers": 8,
+  "testMarkerHits": [],
+  "passed": true
 }

@@ -1,32 +1,50 @@
-[
-  {
-    "Suite": "cn.onetap.checkin.core.NetClientSecurityTest",
-    "Tests": 5,
-    "Failures": 0,
-    "Errors": 0
-  },
-  {
-    "Suite": "cn.onetap.checkin.core.RunnerRulesTest",
-    "Tests": 14,
-    "Failures": 0,
-    "Errors": 0
-  },
-  {
-    "Suite": "cn.onetap.checkin.platform.BilibiliAdapterTest",
-    "Tests": 10,
-    "Failures": 0,
-    "Errors": 0
-  },
-  {
-    "Suite": "cn.onetap.checkin.platform.MusicTiebaAdapterTest",
-    "Tests": 11,
-    "Failures": 0,
-    "Errors": 0
-  },
-  {
-    "Suite": "cn.onetap.checkin.platform.SklandAdapterTest",
-    "Tests": 8,
-    "Failures": 0,
-    "Errors": 0
-  }
-]
+{
+  "tests": 53.0,
+  "failures": 0.0,
+  "errors": 0.0,
+  "skipped": 0.0,
+  "suites": [
+    {
+      "name": "cn.onetap.checkin.core.NetClientSecurityTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "cn.onetap.checkin.core.RunnerRulesTest",
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "cn.onetap.checkin.login.LoginResultBrokerTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "cn.onetap.checkin.platform.BilibiliAdapterTest",
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "cn.onetap.checkin.platform.MusicTiebaAdapterTest",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "cn.onetap.checkin.platform.SklandAdapterTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ]
+}

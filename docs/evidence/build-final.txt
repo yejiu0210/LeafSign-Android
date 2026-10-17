@@ -1,3 +1,5 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.13/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build
 > Task :app:preBuild UP-TO-DATE
 > Task :app:preReleaseBuild UP-TO-DATE
 > Task :app:mergeReleaseJniLibFolders UP-TO-DATE
@@ -101,13 +103,13 @@
 > Task :app:writeDebugAndroidTestSigningConfigVersions UP-TO-DATE
 > Task :app:compileReleaseKotlin
 > Task :app:compileDebugKotlin
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
 > Task :app:compileReleaseJavaWithJavac UP-TO-DATE
 > Task :app:dexBuilderRelease
 > Task :app:mergeReleaseGlobalSynthetics UP-TO-DATE
 > Task :app:generateReleaseLintVitalReportModel
 > Task :app:processReleaseJavaRes UP-TO-DATE
 > Task :app:mergeReleaseJavaResource UP-TO-DATE
-> Task :app:compileDebugJavaWithJavac UP-TO-DATE
 > Task :app:dexBuilderDebug
 > Task :app:mergeDebugGlobalSynthetics UP-TO-DATE
 > Task :app:processDebugJavaRes UP-TO-DATE
@@ -124,11 +126,9 @@
 > Task :app:processDebugUnitTestJavaRes UP-TO-DATE
 > Task :app:bundleReleaseClassesToCompileJar
 > Task :app:mergeDexRelease
-> Task :app:lintVitalAnalyzeRelease
 > Task :app:testDebugUnitTest
-> Task :app:lintVitalReportRelease SKIPPED
-> Task :app:lintVitalRelease SKIPPED
 > Task :app:generateReleaseUnitTestLintModel
+> Task :app:compileReleaseArtProfile
 > Task :app:compileDebugAndroidTestKotlin
 > Task :app:compileDebugAndroidTestJavaWithJavac UP-TO-DATE
 > Task :app:dexBuilderDebugAndroidTest UP-TO-DATE
@@ -139,15 +139,16 @@
 > Task :app:packageDebugAndroidTest UP-TO-DATE
 > Task :app:createDebugAndroidTestApkListingFileRedirect UP-TO-DATE
 > Task :app:assembleDebugAndroidTest UP-TO-DATE
-> Task :app:compileReleaseArtProfile
+> Task :app:lintVitalAnalyzeRelease
+> Task :app:lintAnalyzeReleaseUnitTest
+> Task :app:lintAnalyzeRelease
+> Task :app:lintVitalReportRelease SKIPPED
+> Task :app:lintVitalRelease SKIPPED
 > Task :app:packageRelease
 > Task :app:createReleaseApkListingFileRedirect UP-TO-DATE
 > Task :app:assembleRelease
-> Task :app:lintAnalyzeReleaseUnitTest
-> Task :app:lintAnalyzeRelease
 > Task :app:lintReportRelease UP-TO-DATE
 > Task :app:lintRelease
 
-BUILD SUCCESSFUL in 46s
+BUILD SUCCESSFUL in 2m 45s
 126 actionable tasks: 22 executed, 104 up-to-date
-

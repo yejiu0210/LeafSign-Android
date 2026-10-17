@@ -20,10 +20,15 @@ class DeviceSmokeTest {
         compose.onNodeWithText("今天 0 / 0 项已完成").assertExists()
         compose.onNodeWithText("账号",useUnmergedTree=true).performClick()
         compose.onNodeWithText("添加账号").performClick()
+        compose.onNodeWithText("官方网页登录并自动导入").assertExists()
+        compose.onNodeWithText("手动导入凭证（备用）").performClick()
         compose.onNodeWithText("本地输入凭证").assertExists()
         compose.onNodeWithText("取消").performClick()
         compose.onNodeWithText("设置",useUnmergedTree=true).performClick()
         compose.onNodeWithText("每日后台签到（可选）").performScrollTo().assertExists()
+    }
+    @Test fun screenshotsAreNotBlockedByApp() {
+        compose.runOnUiThread {assertEquals(0,compose.activity.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE)}
     }
     @Test fun keystoreEncryptionBackupRecoveryAndTamperDetection() {
         // A dedicated context directory avoids touching the target application's live state.

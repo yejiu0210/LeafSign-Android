@@ -2,6 +2,8 @@
 
 入口为 `PlatformAdapter.validate / query / execute`，统一执行逻辑在 `core/Runner.kt`。平台实现相互独立；不需要插件框架或后端。
 
+0.2.0 网页登录入口在 `login/WebLoginActivity.kt`，只负责官网会话、白名单提取及身份校验，不执行签到。`LoginResultBroker` 只在内存中交换一次性票据，不能把 Credential 放进 Activity result / Bundle / saved state。修改网站入口或域名时先核实官方页面，保留主框架 HTTPS / host 检查、无 JS bridge、SSL 拒绝及会话清理。森空岛 token 页面及返回官网首帧前必须保持原生 WebView 隐藏。见 `integration-web-login.md`。
+
 - `validate` 必须取得可辨认的用户 ID，列出实际绑定目标，不能用备注或本地序号当平台身份。凭证更新必须与已有账号 ID 一致。`Target.metadata.ownerUserId` 随目标持久化，角色还应保存准确的游戏、角色和服务器字段。
 - `query` 只能调用已查证的只读接口。`PENDING` 必须明确证明尚可执行；无法判断返回 null 或 UNKNOWN，绝不能把“查询没有找到”直接当未签到。
 - `execute` 只做用户选择的普通任务，检验目标所属账号。未知结构或字段返回 UNKNOWN。不要把任意非零错误归为 ALREADY；应核实该接口该业务的准确判定。

@@ -1,13 +1,14 @@
 package cn.onetap.checkin
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,6 +26,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import cn.onetap.checkin.core.*
+import cn.onetap.checkin.login.LoginResultBroker
+import cn.onetap.checkin.login.WebLoginActivity
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.withLock
@@ -35,7 +39,6 @@ class MainActivity : ComponentActivity() {
     private val notificationPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         setContent { MaterialTheme(colorScheme=lightColorScheme(primary=Color(0xFF087F74),secondary=Color(0xFF426563),background=Color(0xFFF5F8F7))) { AppScreen(application as CheckInApp) { if(Build.VERSION.SDK_INT>=33)notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) } } }
     }
     override fun onResume() {
@@ -52,8 +55,9 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
     val clockTick by app.clockTick.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { while(true){ delay(60_000);app.clockTick.value=System.currentTimeMillis() } }
     var tab by remember { mutableIntStateOf(0) }
-    var adding by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<Account?>(null) }
+    var adding by rememberSaveable { mutableStateOf(false) }
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    val editing=state.accounts.firstOrNull { it.id==editingId }
     var error by remember { mutableStateOf("") }
     var delete by remember { mutableStateOf<Account?>(null) }
     var inspecting by remember { mutableStateOf(false) }
@@ -100,7 +104,7 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
                     Text("接入依据已查阅，真实账号验证需在本机添加账号后完成。所有结果来自平台业务响应；未知返回保留为待确认。",pad,style=MaterialTheme.typography.bodySmall)
                 }
                 1 -> {
-                    Button(onClick={editing=null;adding=true},enabled=!busy&&!inspecting,modifier=pad){Text("添加账号")}
+                    Button(onClick={editingId=null;adding=true},enabled=!busy&&!inspecting,modifier=pad){Text("添加账号")}
                     Text("森空岛主账号和分身账号在此分别授权。相同平台身份不能重复添加。",pad,style=MaterialTheme.typography.bodySmall)
                     state.accounts.forEach { a ->
                         Card(pad){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
@@ -118,7 +122,7 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
                                     val id=app.adapters.getValue(a.platform).validate(a.credential)
                                     app.store.update {Rules.addOrUpdate(it,id,a.platform,a.credential,a.note,a.id)};app.refresh();error="身份校验通过，已刷新可选角色 / 贴吧"
                                 }catch(e:Exception){error=validationError(e,a.credential)}finally{inspecting=false}} }
-                            },enabled=!busy&&!inspecting&&a.credential.isNotBlank()){Text("校验 / 刷新")};TextButton(onClick={editing=a;adding=true},enabled=!busy&&!inspecting){Text("备注 / 更新凭证")}}
+                            },enabled=!busy&&!inspecting&&a.credential.isNotBlank()){Text("校验 / 刷新")};TextButton(onClick={editingId=a.id;adding=true},enabled=!busy&&!inspecting){Text("备注 / 更新凭证")}}
                             Row {TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(credential="",enabled=emptySet())else it})}},enabled=!busy&&!inspecting){Text("退出本地授权")};TextButton(onClick={delete=a},enabled=!busy&&!inspecting){Text("删除账号和记录",color=MaterialTheme.colorScheme.error)}}
                         }}
                     }
@@ -152,35 +156,60 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
                     }}
                     Card(pad){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                         Text("本地安全",style=MaterialTheme.typography.titleMedium)
-                        Text("凭证和账号记录由 Android Keystore 密钥加密；禁用备份、明文 HTTP 和凭证页面截图。凭证只发往代码内核实的对应平台域名。",style=MaterialTheme.typography.bodySmall)
-                        Text("版本 0.1.0 · Android 8.0+ · 无服务器 · 不绕过验证码",style=MaterialTheme.typography.bodySmall)
+                        Text("凭证和账号记录由 Android Keystore 密钥加密；禁用备份和明文 HTTP。页面允许截图，手动凭证输入保持遮掩。凭证只发往对应平台核实的官方域名。",style=MaterialTheme.typography.bodySmall)
+                        Text("版本 ${BuildConfig.VERSION_NAME} · Android 8.0+ · 无服务器 · 不绕过验证码",style=MaterialTheme.typography.bodySmall)
                     }}
                 }
             }
             Spacer(Modifier.height(20.dp))
         }
     }
-    if(adding)AccountDialog(app,editing,onClose={adding=false;editing=null},onError={error=it})
+    if(adding)AccountDialog(app,editing,onClose={adding=false;editingId=null},onError={error=it})
     if(error.isNotBlank())AlertDialog(onDismissRequest={error=""},title={Text("提示")},text={Text(error)},confirmButton={TextButton(onClick={error=""}){Text("确定")}})
     delete?.let { a -> AlertDialog(onDismissRequest={delete=null},title={Text("删除此账号？")},text={Text("删除 ${a.note.ifBlank{a.displayName}} 的本地凭证、选择和全部历史记录。不会退出官方 App。")},confirmButton={TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.filterNot{it.id==a.id},records=s.records.filterNot{it.accountId==a.id})};delete=null}){Text("删除")}},dismissButton={TextButton(onClick={delete=null}){Text("取消")}}) }
 }
 
 @Composable private fun AccountDialog(app:CheckInApp,previous:Account?,onClose:()->Unit,onError:(String)->Unit) {
-    var platform by remember {mutableStateOf(previous?.platform?:Platform.NETEASE)}
-    var note by remember {mutableStateOf(previous?.note?:"")}
+    var platform by rememberSaveable {mutableStateOf(previous?.platform?:Platform.NETEASE)}
+    var note by rememberSaveable {mutableStateOf(previous?.note?:"")}
     var credential by remember {mutableStateOf("")}
     var saving by remember {mutableStateOf(false)}
     var help by remember {mutableStateOf(false)}
+    var manual by rememberSaveable {mutableStateOf(false)}
     val context=androidx.compose.ui.platform.LocalContext.current
+    fun saveCredential(raw: String) {
+        if(raw.isBlank()){onError("请先完成官方网页登录，或在本机输入有效凭证");return}
+        saving=true
+        val chosenPlatform=platform
+        val chosenNote=note
+        app.scope.launch {Runner.mutex.withLock {try {
+            val identity=app.adapters.getValue(chosenPlatform).validate(raw)
+            app.store.update{Rules.addOrUpdate(it,identity,chosenPlatform,raw,chosenNote,previous?.id)}
+            app.refresh();credential="";onClose()
+        }catch(e:Exception){onError(validationError(e,raw))}finally{saving=false}}}
+    }
+    val officialLogin=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if(result.resultCode==Activity.RESULT_OK) {
+            val raw=result.data?.getStringExtra(WebLoginActivity.EXTRA_TICKET)?.let {LoginResultBroker.take(it,platform)}
+            if(raw==null)onError("登录结果已过期或进程中断，请重新进行官方网页登录")
+            else saveCredential(raw)
+        }
+    }
     AlertDialog(onDismissRequest={if(!saving){credential="";onClose()}},title={Text(if(previous==null)"添加账号" else "更新账号")},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             if(previous==null)Platform.entries.forEach { p -> Row(verticalAlignment=Alignment.CenterVertically){RadioButton(platform==p,{if(platform!=p){platform=p;credential=""}},enabled=!saving);Text(p.title)} }
             else Text("${previous.platform.title} · ${previous.displayName}")
             OutlinedTextField(note,{note=it.take(40)},label={Text("备注，如主账号 / 分身账号")},enabled=!saving,singleLine=true)
-            Text(credentialHint(platform),style=MaterialTheme.typography.bodySmall)
-            OutlinedTextField(credential,{credential=it},label={Text(if(previous!=null)"新凭证（留空保留）" else "本地输入凭证")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password,autoCorrectEnabled=false),enabled=!saving,modifier=Modifier.fillMaxWidth(),maxLines=4)
-            Text("只在此处输入，不要发送到聊天。登录后会核对平台身份。",style=MaterialTheme.typography.bodySmall)
-            TextButton(onClick={help=!help}){Text("如何获取 / 更新凭证")}
+            Button(onClick={officialLogin.launch(Intent(context,WebLoginActivity::class.java).putExtra(WebLoginActivity.EXTRA_PLATFORM,platform.name))},enabled=!saving,modifier=Modifier.fillMaxWidth()){Text("官方网页登录并自动导入")}
+            Text("在本工具内登录所选平台，识别身份后自动保存。每次网页登录使用独立的临时会话；不会读取原版或分身 App 的私有文件。",style=MaterialTheme.typography.bodySmall)
+            if(previous!=null)Text("更新登录必须仍为 ${previous.displayName}；其他账号请另行添加。",style=MaterialTheme.typography.bodySmall)
+            TextButton(onClick={manual=!manual}){Text("手动导入凭证（备用）")}
+            if(manual){
+                Text(credentialHint(platform),style=MaterialTheme.typography.bodySmall)
+                OutlinedTextField(credential,{credential=it},label={Text(if(previous!=null)"新凭证（留空保留）" else "本地输入凭证")},visualTransformation=PasswordVisualTransformation(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password,autoCorrectEnabled=false),enabled=!saving,modifier=Modifier.fillMaxWidth(),maxLines=4)
+                Text("凭证只在本机输入，不要发送到聊天。网页登录遇到平台不支持或风控时可使用此备用方式。",style=MaterialTheme.typography.bodySmall)
+                TextButton(onClick={help=!help}){Text("如何获取 / 更新凭证")}
+            }
             if(help){
                 Text(credentialHelp(platform),style=MaterialTheme.typography.bodySmall)
                 TextButton(onClick={context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(officialUrl(platform))))}){Text("打开官方入口")}
@@ -190,13 +219,8 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
         }
     },confirmButton={TextButton(onClick={
         val raw=credential.trim().ifBlank {previous?.credential?:""}
-        if(raw.isEmpty()){onError("请在本机输入有效凭证");return@TextButton}
-        saving=true
-        app.scope.launch {Runner.mutex.withLock {try {
-            val identity=app.adapters.getValue(platform).validate(raw)
-            app.store.update{Rules.addOrUpdate(it,identity,platform,raw,note,previous?.id)};app.refresh();credential="";onClose()
-        }catch(e:Exception){onError(validationError(e,raw))}finally{saving=false}}}
-    },enabled=!saving){Text("校验身份并保存")}},dismissButton={TextButton(onClick={credential="";onClose()},enabled=!saving){Text("取消")}})
+        saveCredential(raw)
+    },enabled=!saving&&(previous!=null||manual)){Text(if(previous!=null)"保存备注 / 手动凭证" else "校验手动凭证并保存")}},dismissButton={TextButton(onClick={credential="";onClose()},enabled=!saving){Text("取消")}})
 }
 @Composable private fun SettingSwitch(label:String,value:Boolean,enabled:Boolean=true,onChange:(Boolean)->Unit){Row(verticalAlignment=Alignment.CenterVertically){Text(label,Modifier.weight(1f));Switch(value,onChange,enabled=enabled)}}
 @Composable private fun statusColor(status:TaskStatus):Color=when(status){TaskStatus.SUCCESS,TaskStatus.ALREADY->Color(0xFF087F74);TaskStatus.FAILED,TaskStatus.EXPIRED->MaterialTheme.colorScheme.error;TaskStatus.UNKNOWN,TaskStatus.INTERRUPTED,TaskStatus.MANUAL->Color(0xFF926100);else->MaterialTheme.colorScheme.onSurfaceVariant}

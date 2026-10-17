@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.platform.BilibiliAdapterTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-10-17T06:31:13.130Z" hostname="PC-20260405TBKV" time="0.027">
+<testsuite name="cn.onetap.checkin.platform.BilibiliAdapterTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-10-17T07:12:13.412Z" hostname="PC-20260405TBKV" time="0.037">
   <properties/>
-  <testcase name="codeZeroAloneNeverMeansExperienceGranted" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.012"/>
+  <testcase name="codeZeroAloneNeverMeansExperienceGranted" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.017"/>
   <testcase name="fractionalOrCoercedStatusNeverBecomesClaimable" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.003"/>
   <testcase name="untrustedCookieFieldsAreNotForwarded" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.001"/>
-  <testcase name="cookieErrorsNeverEchoInputSecrets" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.003"/>
-  <testcase name="centerUidAndVipQualificationCannotBeTruncatedOrAssumed" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.006"/>
-  <testcase name="navUidRequiresPositiveIntegerLongWithoutCoercion" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.0"/>
+  <testcase name="cookieErrorsNeverEchoInputSecrets" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.004"/>
+  <testcase name="centerUidAndVipQualificationCannotBeTruncatedOrAssumed" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.007"/>
+  <testcase name="navUidRequiresPositiveIntegerLongWithoutCoercion" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.001"/>
   <testcase name="watchingIsRequiredAndNotAutomated" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.0"/>
   <testcase name="unknownOrMissingStatusDoesNotBecomeAlready" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.0"/>
   <testcase name="fractionalBusinessCodeAndGrantTypeNeverBecomeSuccess" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.001"/>
-  <testcase name="deferredExperienceIsDistinctFromReceived" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.0"/>
+  <testcase name="deferredExperienceIsDistinctFromReceived" classname="cn.onetap.checkin.platform.BilibiliAdapterTest" time="0.001"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>
