@@ -5,23 +5,32 @@ import cn.onetap.checkin.core.Target
 import org.json.JSONObject
 import java.security.MessageDigest
 
-/** Per-forum ordinary signing only; no paid msign, repair-sign, or growth task. */
-class TiebaAdapter : PlatformAdapter {
+/** Per-forum ordinary signing and one opt-in daily like per forum; no paid msign or repair-sign. */
+class TiebaAdapter(private val store: StateStore? = null) : PlatformAdapter {
     override val platform = Platform.TIEBA
     private val net = NetClient(setOf("tiebac.baidu.com", "tieba.baidu.com"))
     private var lastSignNanos = 0L
+    private val likeTask by lazy { TiebaLikeTask(store, ::appRequest, pace = ::paceWrites) }
     private data class Session(val uid: String, val name: String, val tbs: String)
 
     override fun validate(credential: String): Identity {
         val cookies = credentials(credential)
         val session = login(cookies)
         val targets = followedForums(cookies, session.uid)
-        return Identity(session.uid, session.name, targets.ifEmpty {
-            listOf(Target("tieba:none", "forum", "尚未关注贴吧", bound = false, metadata = mapOf("ownerUserId" to session.uid)))
-        }, "已校验百度 UID；已分页获取 ${targets.size} 个关注贴吧，可在任务设置中全选或选择部分")
+        val tasks=if(targets.isEmpty()) listOf(
+            Target("tieba:none", "forum", "尚未关注贴吧", bound = false, metadata = mapOf("ownerUserId" to session.uid)),
+            TiebaLikeTask.target(session.uid,"none","",false)
+        ) else targets.flatMap { forum -> listOf(forum,TiebaLikeTask.target(session.uid,forum.metadata.getValue("forumId"),forum.metadata.getValue("forumName"))) }
+        return Identity(session.uid,session.name,tasks,
+            "已校验百度 UID；已分页获取 ${targets.size} 个关注贴吧。每个吧可单独启用每日随机点赞一帖；已赞则此帖最多取消一次再赞。经验待官方确认。")
     }
 
     override fun execute(credential: String, target: Target): TaskResult {
+        if (target.type == "daily-like" || target.id.startsWith(TiebaLikeTask.TARGET_PREFIX)) {
+            if (!target.bound) return TaskResult(TaskStatus.UNBOUND, "尚未关注贴吧，无法选择每日点赞帖子")
+            val cookies=credentials(credential);val session=login(cookies);checkOwner(session,target)
+            return likeTask.execute(session.uid,cookies.getValue("BDUSS"),session.tbs,target,followedForums(cookies,session.uid))
+        }
         if (!target.bound) return TaskResult(TaskStatus.UNBOUND, "尚未关注此贴吧")
         requireTarget(target)
         val cookies = credentials(credential)
@@ -30,22 +39,29 @@ class TiebaAdapter : PlatformAdapter {
         val state = querySigned(cookies, target)
         if (state?.status == TaskStatus.ALREADY) return state
         // Pacing, not captcha bypass: each account/target remains independently executable.
-        synchronized(this) {
-            val remaining = 5000L - (System.nanoTime() - lastSignNanos) / 1_000_000
-            if (lastSignNanos != 0L && remaining > 0) Thread.sleep(remaining)
-            lastSignNanos = System.nanoTime()
-        }
+        paceWrites()
         val response = appRequest("/c/c/forum/sign", mapOf("BDUSS" to cookies.getValue("BDUSS"),
             "_client_version" to VERSION, "kw" to target.metadata.getValue("forumName"), "tbs" to session.tbs))
         return parseSignResult(response)
     }
 
     override fun query(credential: String, target: Target): TaskResult? {
+        if (target.type == "daily-like" || target.id.startsWith(TiebaLikeTask.TARGET_PREFIX)) {
+            if (!target.bound) return TaskResult(TaskStatus.UNBOUND,"尚未关注贴吧，无法选择每日点赞帖子")
+            val cookies=credentials(credential);val session=login(cookies);checkOwner(session,target)
+            return likeTask.query(session.uid,cookies.getValue("BDUSS"),target)
+        }
         if (!target.bound) return TaskResult(TaskStatus.UNBOUND, "尚未关注此贴吧")
         requireTarget(target)
         val cookies = credentials(credential)
         checkOwner(login(cookies), target)
         return querySigned(cookies, target)
+    }
+
+    private fun paceWrites() = synchronized(this) {
+        val remaining = 5000L - (System.nanoTime() - lastSignNanos) / 1_000_000
+        if (lastSignNanos != 0L && remaining > 0) Thread.sleep(remaining)
+        lastSignNanos = System.nanoTime()
     }
 
     private fun querySigned(cookies: Map<String, String>, target: Target): TaskResult? {

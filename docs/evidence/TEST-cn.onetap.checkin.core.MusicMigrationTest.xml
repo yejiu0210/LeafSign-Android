@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.core.MusicMigrationTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-17T07:38:53.196Z" hostname="PC-20260405TBKV" time="0.258">
+<testsuite name="cn.onetap.checkin.core.MusicMigrationTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-17T08:12:27.237Z" hostname="PC-20260405TBKV" time="0.015">
   <properties/>
-  <testcase name="migrationIsIdempotent" classname="cn.onetap.checkin.core.MusicMigrationTest" time="0.091"/>
-  <testcase name="otherAccountsAndNewMemberSelectionsRemainUnchanged" classname="cn.onetap.checkin.core.MusicMigrationTest" time="0.085"/>
-  <testcase name="retiredTaskNeverEnablesMemberTaskOrTransfersHistory" classname="cn.onetap.checkin.core.MusicMigrationTest" time="0.079"/>
+  <testcase name="migrationIsIdempotent" classname="cn.onetap.checkin.core.MusicMigrationTest" time="0.0"/>
+  <testcase name="otherAccountsAndNewMemberSelectionsRemainUnchanged" classname="cn.onetap.checkin.core.MusicMigrationTest" time="0.001"/>
+  <testcase name="retiredTaskNeverEnablesMemberTaskOrTransfersHistory" classname="cn.onetap.checkin.core.MusicMigrationTest" time="0.014"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

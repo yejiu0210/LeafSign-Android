@@ -58,23 +58,25 @@ Daemon will be stopped at the end of the build
 > Task :app:processDebugManifest UP-TO-DATE
 > Task :app:processDebugManifestForPackage UP-TO-DATE
 > Task :app:processDebugResources UP-TO-DATE
+> Task :app:compileReleaseKotlin
+> Task :app:compileDebugKotlin
+w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/login/WebLoginActivity.kt:93:60 'static field SOFT_INPUT_ADJUST_RESIZE: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/platform/TiebaLikeTask.kt:49:58 Condition is always 'true'.
 
 > Task :app:compileReleaseKotlin
-w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/login/WebLoginActivity.kt:81:60 'static field SOFT_INPUT_ADJUST_RESIZE: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/login/WebLoginActivity.kt:93:60 'static field SOFT_INPUT_ADJUST_RESIZE: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/platform/TiebaLikeTask.kt:49:58 Condition is always 'true'.
 
-> Task :app:compileDebugKotlin
-w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/login/WebLoginActivity.kt:81:60 'static field SOFT_INPUT_ADJUST_RESIZE: Int' is deprecated. Deprecated in Java.
-
-> Task :app:compileReleaseJavaWithJavac UP-TO-DATE
+> Task :app:compileReleaseJavaWithJavac
 > Task :app:dexBuilderRelease
 > Task :app:mergeReleaseGlobalSynthetics UP-TO-DATE
 > Task :app:generateReleaseLintVitalReportModel
 > Task :app:mergeDexRelease
 > Task :app:compileReleaseArtProfile
-> Task :app:processReleaseJavaRes UP-TO-DATE
-> Task :app:mergeReleaseJavaResource UP-TO-DATE
+> Task :app:processReleaseJavaRes
+> Task :app:mergeReleaseJavaResource
 > Task :app:javaPreCompileDebug UP-TO-DATE
-> Task :app:compileDebugJavaWithJavac UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac
 > Task :app:mergeDebugShaders UP-TO-DATE
 > Task :app:compileDebugShaders NO-SOURCE
 > Task :app:generateDebugAssets UP-TO-DATE
@@ -84,8 +86,8 @@ w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2
 > Task :app:lintVitalAnalyzeRelease
 > Task :app:dexBuilderDebug
 > Task :app:mergeDebugGlobalSynthetics UP-TO-DATE
-> Task :app:processDebugJavaRes UP-TO-DATE
-> Task :app:mergeDebugJavaResource UP-TO-DATE
+> Task :app:processDebugJavaRes
+> Task :app:mergeDebugJavaResource
 > Task :app:checkDebugDuplicateClasses UP-TO-DATE
 > Task :app:mergeExtDexDebug UP-TO-DATE
 > Task :app:mergeLibDexDebug UP-TO-DATE
@@ -97,7 +99,7 @@ w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2
 > Task :app:writeDebugAppMetadata UP-TO-DATE
 > Task :app:writeDebugSigningConfigVersions UP-TO-DATE
 > Task :app:packageDebug
-> Task :app:createDebugApkListingFileRedirect UP-TO-DATE
+> Task :app:createDebugApkListingFileRedirect
 > Task :app:assembleDebug
 > Task :app:bundleDebugClassesToRuntimeJar
 > Task :app:bundleDebugClassesToCompileJar
@@ -113,10 +115,10 @@ w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2
 > Task :app:generateReleaseUnitTestLintModel
 > Task :app:lintVitalReportRelease SKIPPED
 > Task :app:lintVitalRelease SKIPPED
-> Task :app:lintAnalyzeRelease
 > Task :app:packageRelease
 > Task :app:createReleaseApkListingFileRedirect
 > Task :app:assembleRelease
+> Task :app:lintAnalyzeRelease
 > Task :app:lintAnalyzeReleaseUnitTest
 > Task :app:preDebugAndroidTestBuild SKIPPED
 > Task :app:processDebugAndroidTestManifest UP-TO-DATE
@@ -158,5 +160,5 @@ Wrote HTML report to file:///C:/Users/Administrator/Documents/Codex/2026-10-17/a
 
 > Task :app:lintRelease
 
-BUILD SUCCESSFUL in 4m
-126 actionable tasks: 27 executed, 99 up-to-date
+BUILD SUCCESSFUL in 5m 6s
+126 actionable tasks: 34 executed, 92 up-to-date

@@ -37,6 +37,26 @@ class RunnerRulesTest {
         Runner(store,mapOf(Platform.SKLAND to adapter)).run();assertEquals(0,adapter.writes)
         assertTrue(store.value.records.all {it.status==TaskStatus.EXPIRED})
     }
+    @Test fun refreshedSessionIsSavedAndRereadAfterQueryAndForNextTarget()=runBlocking {
+        val a=account("main");val store=MemoryStore(AppState(accounts=listOf(a)))
+        val adapter=FakeAdapter().apply {
+            validateAction={Identity("main","main",a.targets,updatedCredential="fixture-refreshed-session")}
+            queryAction={c,_->
+                assertEquals("fixture-refreshed-session",c)
+                store.update{s->s.copy(accounts=s.accounts.map{it.copy(credential="fixture-query-refreshed-session")})}
+                TaskResult(TaskStatus.PENDING,"fixture")
+            }
+            action={c,_->
+                assertEquals("fixture-query-refreshed-session",c)
+                store.update{s->s.copy(accounts=s.accounts.map{it.copy(credential="fixture-refreshed-session")})}
+                TaskResult(TaskStatus.SUCCESS,"fixture")
+            }
+        }
+        assertEquals(2,Runner(store,mapOf(Platform.SKLAND to adapter)).run())
+        assertEquals(2,adapter.writes)
+        val added=Rules.addOrUpdate(AppState(),Identity("fixture","fixture",emptyList(),updatedCredential="fixture-fresh"),Platform.HEYBOX,"fixture-old","",null)
+        assertEquals("fixture-fresh",added.accounts.single().credential)
+    }
     @Test fun removedBindingOrUnfollowedForumNeverWrites()=runBlocking {
         val adapter=FakeAdapter().apply {validateAction={c->Identity(c,c,emptyList())}}
         val store=MemoryStore(AppState(accounts=listOf(account("main"))))

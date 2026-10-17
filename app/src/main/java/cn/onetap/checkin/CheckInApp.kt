@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 class CheckInApp : Application() {
     lateinit var store: Store
     lateinit var runner: Runner
-    val adapters: Map<Platform,PlatformAdapter> by lazy { listOf(NeteaseAdapter(),TiebaAdapter(),SklandAdapter(),BilibiliAdapter()).associateBy { it.platform } }
+    val adapters: Map<Platform,PlatformAdapter> by lazy { listOf(NeteaseAdapter(),TiebaAdapter(store),SklandAdapter(),BilibiliAdapter(),HeyboxAdapter(store)).associateBy { it.platform } }
     val state = MutableStateFlow(AppState())
     val busy = MutableStateFlow(false)
     val progress = MutableStateFlow("")

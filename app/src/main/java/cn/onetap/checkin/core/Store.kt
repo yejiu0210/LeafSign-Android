@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
+import cn.onetap.checkin.theme.ThemeMode
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -29,10 +30,38 @@ data class Record(
     val task: String, val period: String, val time: Long = System.currentTimeMillis(),
     val status: TaskStatus, val message: String, val diagnostic: String = "", val experienceState: String = ""
 )
-data class Settings(val auto: Boolean = false, val hour: Int = 9, val minute: Int = 0, val notifications: Boolean = false, val offerCatchup: Boolean = true)
-data class AppState(val accounts: List<Account> = emptyList(), val records: List<Record> = emptyList(), val settings: Settings = Settings())
+data class Settings(val auto: Boolean = false, val hour: Int = 9, val minute: Int = 0, val notifications: Boolean = false, val offerCatchup: Boolean = true, val themeMode: ThemeMode = ThemeMode.SYSTEM)
+/** Encrypted continuation state for multi-step actions; never contains platform credentials. */
+data class TaskCheckpoint(val accountId: String, val targetId: String, val period: String, val values: Map<String,String>)
+data class AppState(val accounts: List<Account> = emptyList(), val records: List<Record> = emptyList(), val settings: Settings = Settings(), val checkpoints: List<TaskCheckpoint> = emptyList())
+
+internal object SettingsJson {
+    fun encode(settings: Settings) = JSONObject().apply {
+        put("auto", settings.auto); put("hour", settings.hour); put("minute", settings.minute)
+        put("notifications", settings.notifications); put("offerCatchup", settings.offerCatchup)
+        put("themeMode", settings.themeMode.name)
+    }
+    fun decode(value: JSONObject) = Settings(
+        value.optBoolean("auto"), value.optInt("hour", 9), value.optInt("minute", 0),
+        value.optBoolean("notifications"), value.optBoolean("offerCatchup", true),
+        ThemeMode.fromStored(value.optString("themeMode"))
+    )
+}
+
+internal object CheckpointsJson {
+    fun encode(items: List<TaskCheckpoint>) = JSONArray().apply { items.forEach { c -> put(JSONObject().apply {
+        put("accountId",c.accountId);put("targetId",c.targetId);put("period",c.period);put("values",JSONObject(c.values))
+    }) } }
+    fun decode(items: JSONArray?): List<TaskCheckpoint> = if(items==null) emptyList() else (0 until items.length()).map { i ->
+        val c=items.getJSONObject(i);val values=c.optJSONObject("values")?:JSONObject()
+        TaskCheckpoint(c.getString("accountId"),c.getString("targetId"),c.getString("period"),values.keys().asSequence().associateWith {values.getString(it)})
+    }
+}
 
 object Rules {
+    fun removeAccount(state: AppState, accountId: String) = state.copy(
+        accounts=state.accounts.filterNot {it.id==accountId},records=state.records.filterNot {it.accountId==accountId},
+        checkpoints=state.checkpoints.filterNot {it.accountId==accountId})
     /** Retire the old ordinary sign-in without copying its completion to the member task. */
     fun retireOrdinaryMusicTask(state: AppState): AppState = state.copy(accounts=state.accounts.map { a ->
         if(a.platform!=Platform.NETEASE || a.targets.none {it.id=="netease:daily:android"}) a
@@ -54,14 +83,28 @@ object Rules {
         if (previous != null) require(previous.platform == platform && previous.userId == identity.userId) { "新凭证属于另一个账号，请单独添加，未覆盖原账号" }
         require(state.accounts.none { it.id != previousId && it.platform == platform && it.userId == identity.userId }) { "此账号已存在，请更新已有账号，避免把同一账号当成两个账号" }
         val targets = identity.targets.distinctBy { it.id }
-        val selection = if (previous == null) targets.filter { it.bound }.map { it.id }.toSet()
+        val selection = if (previous == null) targets.filter { it.bound && it.metadata["defaultEnabled"]!="false" }.map { it.id }.toSet()
             else previous.enabled.intersect(targets.filter { it.bound }.map { it.id }.toSet())
         val account = Account(previous?.id ?: UUID.randomUUID().toString(), platform, identity.userId, identity.displayName,
-            note.trim().take(40), credential, targets, selection, identity.details)
+            note.trim().take(40), identity.updatedCredential ?: credential, targets, selection, identity.details)
         return state.copy(accounts = state.accounts.filterNot { it.id == account.id } + account)
     }
-    fun safeDiagnostic(value: String): String = Regex("(?i)\\b(?:HTTP [1-5][0-9]{2}|(?:code|status|errno|retcode|error_code|experience\\.state)[=: ]+(?:-?[0-9]{1,10}|missing)|exception[=: ]+[A-Za-z]{1,60})\\b")
-        .findAll(value).map { it.value }.distinct().joinToString("; ").take(240)
+    fun safeDiagnostic(value: String): String {
+        val numeric = Regex("(?i)\\b(?:HTTP [1-5][0-9]{2}|(?:code|status|errno|retcode|error_code|experience\\.state)[=: ]+(?:-?[0-9]{1,10}|missing)|exception[=: ]+[A-Za-z]{1,60})\\b")
+            .findAll(value).map { it.value }.toList()
+        // Fixed adapter-generated reasons only; never allow arbitrary server response text.
+        val reasons = setOf("identity missing result", "identity missing server uid", "identity conflicting server uid",
+            "identity missing server session", "missing task_list", "invalid task group", "invalid task object",
+            "missing or ambiguous sign task", "unrecognized sign state", "unrecognized business status",
+            "auth required", "manual verification required", "invalid cookie").map { "heybox $it" }
+        return (numeric+reasons.filter { it==value }).distinct().joinToString("; ").take(240)
+    }
+    fun resultTitle(status: TaskStatus, targetId: String): String = if(targetId.startsWith("tieba:like:")) when(status) {
+        TaskStatus.SUCCESS -> "点赞完成"
+        TaskStatus.ALREADY -> "今日点赞任务已完成"
+        TaskStatus.PENDING -> "待点赞"
+        else -> status.title
+    } else status.title
     fun safeMessage(value: String, credential: String): String {
         var text = value
         if (credential.isNotBlank()) text = text.replace(credential, "[已隐藏]")
@@ -115,7 +158,8 @@ class Store(context: Context) : StateStore {
         put("records",JSONArray().apply { state.records.takeLast(3000).forEach { r -> put(JSONObject().apply {
             put("id",r.id);put("accountId",r.accountId);put("platform",r.platform.name);put("accountLabel",r.accountLabel);put("targetId",r.targetId);put("task",r.task);put("period",r.period);put("time",r.time);put("status",r.status.name);put("message",r.message);put("diagnostic",r.diagnostic);put("experienceState",r.experienceState)
         }) } })
-        put("settings",JSONObject().apply { put("auto",state.settings.auto);put("hour",state.settings.hour);put("minute",state.settings.minute);put("notifications",state.settings.notifications);put("offerCatchup",state.settings.offerCatchup) })
+        put("settings",SettingsJson.encode(state.settings))
+        put("checkpoints",CheckpointsJson.encode(state.checkpoints))
     }
     private fun decode(root: JSONObject): AppState {
         fun objects(array: JSONArray) = (0 until array.length()).map { array.getJSONObject(it) }
@@ -129,6 +173,7 @@ class Store(context: Context) : StateStore {
         }
         val records = objects(root.optJSONArray("records") ?: JSONArray()).map { r -> Record(r.getString("id"),r.getString("accountId"),Platform.valueOf(r.getString("platform")),r.getString("accountLabel"),r.getString("targetId"),r.getString("task"),r.getString("period"),r.getLong("time"),TaskStatus.valueOf(r.getString("status")),r.getString("message"),r.optString("diagnostic"),r.optString("experienceState")) }
         val s = root.optJSONObject("settings") ?: JSONObject()
-        return AppState(accounts, records, Settings(s.optBoolean("auto"),s.optInt("hour",9),s.optInt("minute",0),s.optBoolean("notifications"),s.optBoolean("offerCatchup",true)))
+        val checkpoints=CheckpointsJson.decode(root.optJSONArray("checkpoints"))
+        return AppState(accounts, records, SettingsJson.decode(s),checkpoints)
     }
 }

@@ -2,11 +2,13 @@ package cn.onetap.checkin.login
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Bitmap
-import android.graphics.Color
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
+import android.os.Build
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
@@ -18,12 +20,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.doOnPreDraw
 import androidx.lifecycle.lifecycleScope
 import cn.onetap.checkin.CheckInApp
 import cn.onetap.checkin.core.AdapterException
 import cn.onetap.checkin.core.Platform
 import cn.onetap.checkin.core.TaskStatus
+import cn.onetap.checkin.theme.ThemePalette
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -45,6 +49,11 @@ class WebLoginActivity : ComponentActivity() {
         const val BROWSER_TAG = "official_login_browser"
         private const val SK_TOKEN_URL = "https://web-api.skland.com/account/info/hg"
     }
+
+    private val systemDark by lazy { resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES }
+    private val themeMode by lazy { (application as CheckInApp).state.value.settings.themeMode }
+    private val darkTheme by lazy { themeMode.isDark(systemDark) }
+    private val colors by lazy { ThemePalette.resolve(themeMode, systemDark) }
 
     private lateinit var platform: Platform
     private lateinit var browserContainer: FrameLayout
@@ -74,6 +83,9 @@ class WebLoginActivity : ComponentActivity() {
     private var lastSdkProbeAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // WebView derives prefers-color-scheme from the native theme's isLightTheme attribute.
+        // Select a real dark/light framework theme before creating any native or web views.
+        setTheme(if (darkTheme) android.R.style.Theme_Material_NoActionBar else android.R.style.Theme_Material_Light_NoActionBar)
         super.onCreate(savedInstanceState)
         platform = Platform.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_PLATFORM) }
             ?: run { finish(); return }
@@ -89,40 +101,59 @@ class WebLoginActivity : ComponentActivity() {
     }
 
     private fun buildNativeLayout(): LinearLayout {
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.WHITE) }
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(colors.background) }
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime())
             view.setPadding(safe.left, safe.top, safe.right, max(safe.bottom, keyboard.bottom))
             insets
         }
-        val toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(colors.surface) }
         backButton = Button(this).apply { text = "返回"; tag = BACK_TAG; setOnClickListener { closeSession(null) } }
+        styleButton(backButton)
         toolbar.addView(backButton, LinearLayout.LayoutParams(dp(76), dp(52)))
         toolbar.addView(label("${platform.title} · 官方网页登录", 17f).apply { tag = TITLE_TAG }, LinearLayout.LayoutParams(0, dp(52), 1f))
         root.addView(toolbar)
-        root.addView(label("登录和验证码由官网处理。只导入本次登录，不读取其他 App 数据。", 12f))
-        domainText = label("准备独立登录会话", 12f); root.addView(domainText)
-        statusText = label("正在清理上次登录会话…", 13f).apply { tag = STATUS_TAG; minLines = 2; maxLines = 4; setTextColor(Color.rgb(0, 86, 78)) }
+        root.addView(label("登录和验证码由官网处理。只导入本次登录，不读取其他 App 数据。", 12f).apply { setTextColor(colors.onSurfaceVariant) })
+        domainText = label("准备独立登录会话", 12f).apply { setTextColor(colors.onSurfaceVariant) }; root.addView(domainText)
+        statusText = label("正在清理上次登录会话…", 13f).apply { tag = STATUS_TAG; minLines = 2; maxLines = 4; setTextColor(colors.primary) }
         root.addView(statusText)
-        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true }
+        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = true; indeterminateTintList = ColorStateList.valueOf(colors.primary)
+        }
         root.addView(progressBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)))
         val actions = LinearLayout(this)
         detectButton = Button(this).apply { text = "登录完成，检测账号"; textSize = 12f; setOnClickListener { detect(manual = true) } }
         retryButton = Button(this).apply { text = "重新加载官网"; tag = RETRY_TAG; textSize = 12f; setOnClickListener { retryLogin() } }
+        styleButton(detectButton); styleButton(retryButton)
         actions.addView(detectButton, LinearLayout.LayoutParams(0, dp(52), 1.2f))
         actions.addView(retryButton, LinearLayout.LayoutParams(0, dp(52), 1f)); root.addView(actions)
-        browserContainer = FrameLayout(this).apply { setBackgroundColor(Color.rgb(248, 249, 249)) }
-        placeholder = label("正在准备独立登录会话…", 15f).apply { gravity = Gravity.CENTER }
+        browserContainer = FrameLayout(this).apply { setBackgroundColor(colors.background) }
+        placeholder = label("正在准备独立登录会话…", 15f).apply { gravity = Gravity.CENTER; setTextColor(colors.onSurfaceVariant) }
         browserContainer.addView(placeholder, FrameLayout.LayoutParams(-1, -1))
         root.addView(browserContainer, LinearLayout.LayoutParams(-1, 0, 1f))
-        setContentView(root); ViewCompat.requestApplyInsets(root); updateControls()
+        setContentView(root); applySystemBarTheme(root); ViewCompat.requestApplyInsets(root); updateControls()
         return root
     }
 
     private fun label(value: String, size: Float) = TextView(this).apply {
-        text = value; textSize = size; setTextColor(Color.rgb(28, 33, 33)); setPadding(dp(12), dp(5), dp(12), dp(5))
+        text = value; textSize = size; setTextColor(colors.onSurface); setPadding(dp(12), dp(5), dp(12), dp(5))
         importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+    }
+    private fun styleButton(button: Button) {
+        button.backgroundTintList = ColorStateList.valueOf(colors.surface)
+        button.setTextColor(ColorStateList(
+            arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
+            intArrayOf((colors.onSurface and 0x00FFFFFF) or (0x66 shl 24), colors.primary)
+        ))
+    }
+    @Suppress("DEPRECATION")
+    private fun applySystemBarTheme(root: View) {
+        window.decorView.setBackgroundColor(colors.background)
+        window.statusBarColor = colors.background; window.navigationBarColor = colors.background
+        WindowCompat.getInsetsController(window, root).apply {
+            isAppearanceLightStatusBars = !darkTheme; isAppearanceLightNavigationBars = !darkTheme
+        }
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density + .5f).toInt()
     private fun showStatus(message: String) { statusText.text = message; updateControls() }
@@ -175,6 +206,12 @@ class WebLoginActivity : ComponentActivity() {
                 mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW; cacheMode = WebSettings.LOAD_NO_CACHE
                 setSavePassword(false); saveFormData = false
                 javaScriptCanOpenWindowsAutomatically = false; setSupportMultipleWindows(false)
+                // The official site's own dark CSS takes precedence. On Android 13+, the
+                // provider may darken other content if the site permits it. Older providers
+                // retain the site's appearance; do not inject CSS into login/password pages.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    try { isAlgorithmicDarkeningAllowed = darkTheme } catch (_: UnsupportedOperationException) { }
+                }
                 // Official NetEase home HTML sends Android/Mobile clients toward its app landing
                 // page. Use this provider's desktop-web UA, never an official-app identity.
                 if (platform == Platform.NETEASE) userAgentString = userAgentString
@@ -185,7 +222,7 @@ class WebLoginActivity : ComponentActivity() {
                     builtInZoomControls = true; displayZoomControls = false
                 }
             }
-            browser.tag = BROWSER_TAG; browser.setBackgroundColor(Color.WHITE); browser.isSaveEnabled = false
+            browser.tag = BROWSER_TAG; browser.setBackgroundColor(colors.background); browser.isSaveEnabled = false
             browser.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(browser, false)
@@ -315,12 +352,14 @@ class WebLoginActivity : ComponentActivity() {
             Platform.TIEBA -> listOf("https://tieba.baidu.com/")
             Platform.BILIBILI -> listOf("https://api.bilibili.com/", "https://www.bilibili.com/")
             Platform.SKLAND -> listOf("https://www.skland.com/", "https://m.skland.com/")
+            Platform.HEYBOX -> listOf("https://www.xiaoheihe.cn/", "https://login.xiaoheihe.cn/", "https://api.xiaoheihe.cn/")
         }
         val allowed = when (platform) {
             Platform.NETEASE -> setOf("MUSIC_U", "__csrf")
             Platform.TIEBA -> setOf("BDUSS", "STOKEN")
             Platform.BILIBILI -> setOf("SESSDATA", "bili_jct", "buvid3", "DedeUserID", "DedeUserID__ckMd5", "bili_ticket", "bili_ticket_expires")
             Platform.SKLAND -> setOf("SK_OAUTH_CRED_KEY")
+            Platform.HEYBOX -> setOf("pkey", "user_pkey", "heybox_id", "user_heybox_id", "x_xhh_tokenid")
         }
         val cookies = linkedMapOf<String, String>()
         urls.forEach { url -> CookieManager.getInstance().getCookie(url).orEmpty().split(';').forEach { raw ->
@@ -332,8 +371,11 @@ class WebLoginActivity : ComponentActivity() {
             Platform.TIEBA -> setOf("BDUSS")
             Platform.BILIBILI -> setOf("SESSDATA", "bili_jct")
             Platform.SKLAND -> setOf("SK_OAUTH_CRED_KEY")
+            Platform.HEYBOX -> emptySet()
         }
-        return if (required.all { it in cookies }) cookies.entries.joinToString("; ") { "${it.key}=${it.value}" } else null
+        val complete=if(platform==Platform.HEYBOX) (cookies.containsKey("pkey")||cookies.containsKey("user_pkey")) &&
+            (cookies.containsKey("heybox_id")||cookies.containsKey("user_heybox_id")) else required.all {it in cookies}
+        return if (complete) cookies.entries.joinToString("; ") { "${it.key}=${it.value}" } else null
     }
     private fun detect(manual: Boolean) {
         val browser = page ?: return
@@ -441,7 +483,7 @@ class WebLoginActivity : ComponentActivity() {
             try {
                 val adapter = (application as CheckInApp).adapters.getValue(platform)
                 val identity = withTimeout(45_000) { runInterruptible(Dispatchers.IO) { adapter.validate(credential) } }
-                if (!closing && !isDestroyed) { showStatus("已确认账号：${identity.displayName} · ID ${identity.userId}"); closeSession(credential) }
+                if (!closing && !isDestroyed) { showStatus("已确认账号：${identity.displayName} · ID ${identity.userId}"); closeSession(identity.updatedCredential ?: credential) }
             } catch (_: TimeoutCancellationException) {
                 if (!closing) validationFailed("官方身份校验超时，尚未保存账号。请检查网络后重试。")
             } catch (e: CancellationException) { throw e }

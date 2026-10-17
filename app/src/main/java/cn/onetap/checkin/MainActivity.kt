@@ -3,6 +3,7 @@ package cn.onetap.checkin
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -11,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -25,9 +27,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.view.WindowCompat
 import cn.onetap.checkin.core.*
 import cn.onetap.checkin.login.LoginResultBroker
 import cn.onetap.checkin.login.WebLoginActivity
+import cn.onetap.checkin.theme.LocalThemePalette
+import cn.onetap.checkin.theme.OneTapTheme
+import cn.onetap.checkin.theme.ThemeMode
+import cn.onetap.checkin.theme.ThemePalette
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.withLock
@@ -39,7 +46,29 @@ class MainActivity : ComponentActivity() {
     private val notificationPermission=registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme(colorScheme=lightColorScheme(primary=Color(0xFF087F74),secondary=Color(0xFF426563),background=Color(0xFFF5F8F7))) { AppScreen(application as CheckInApp) { if(Build.VERSION.SDK_INT>=33)notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) } } }
+        setContent {
+            val app = application as CheckInApp
+            val state by app.state.collectAsStateWithLifecycle()
+            val systemDark = isSystemInDarkTheme()
+            val dark = state.settings.themeMode.isDark(systemDark)
+            val colors = ThemePalette.resolve(state.settings.themeMode, systemDark)
+            SideEffect {
+                window.setBackgroundDrawable(ColorDrawable(colors.background))
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+                if (Build.VERSION.SDK_INT < 35) {
+                    @Suppress("DEPRECATION")
+                    window.statusBarColor = colors.background
+                    @Suppress("DEPRECATION")
+                    window.navigationBarColor = colors.background
+                }
+            }
+            OneTapTheme(state.settings.themeMode) {
+                AppScreen(app) { if(Build.VERSION.SDK_INT>=33)notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) }
+            }
+        }
     }
     override fun onResume() {
         super.onResume()
@@ -94,7 +123,7 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
                                     val status=if(!t.bound)TaskStatus.UNBOUND else r?.status?:TaskStatus.PENDING
                                     Column(verticalArrangement=Arrangement.spacedBy(3.dp)) {
                                         Text(listOf(t.game,t.label,t.server).filter{it.isNotBlank()}.distinct().joinToString(" · "))
-                                        Text(if(t.bound&&t.id !in a.enabled)"已停用" else status.title,color=statusColor(status),style=MaterialTheme.typography.labelLarge)
+                                        Text(if(t.bound&&t.id !in a.enabled)"已停用" else Rules.resultTitle(status,t.id),color=statusColor(status),style=MaterialTheme.typography.labelLarge)
                                         if(r!=null&&t.id in a.enabled){Text(r.message,style=MaterialTheme.typography.bodySmall);if(r.experienceState.isNotBlank())Text("经验：${r.experienceState}",style=MaterialTheme.typography.bodySmall)}
                                     }
                                 }
@@ -112,7 +141,10 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
                             Text("${a.displayName} · ID ${a.userId}")
                             Text("身份校验：${formatTime(a.checkedAt)}",style=MaterialTheme.typography.bodySmall)
                             if(a.details.isNotBlank())Text(a.details,style=MaterialTheme.typography.bodySmall)
-                            if(a.platform==Platform.TIEBA)Row { TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=it.targets.filter{t->t.bound}.map{t->t.id}.toSet())else it})}},enabled=!busy){Text("全选")};TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=emptySet())else it})}},enabled=!busy){Text("全不选")}}
+                            if(a.platform==Platform.TIEBA){
+                                Text("每个吧的随机点赞可单独勾选，默认关闭；每吧每天各选一帖，已赞则取消一次再赞。经验由贴吧判定。更新后先校验 / 刷新以载入。",style=MaterialTheme.typography.bodySmall)
+                                Row { TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=it.enabled+it.targets.filter{t->t.bound&&t.type=="forum"}.map{t->t.id})else it})}},enabled=!busy){Text("全选贴吧")};TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=it.enabled-it.targets.filter{t->t.type=="forum"}.map{t->t.id}.toSet())else it})}},enabled=!busy){Text("取消全部贴吧")}}
+                            }
                             a.targets.forEach { t -> Row(verticalAlignment=Alignment.CenterVertically) {
                                 Checkbox(checked=t.id in a.enabled,onCheckedChange={v->mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=if(v)it.enabled+t.id else it.enabled-t.id)else it})}},enabled=!busy&&t.bound&&a.credential.isNotBlank())
                                 Text(listOf(t.game,t.label,t.server,if(!t.bound)"未绑定" else "").filter{it.isNotBlank()}.distinct().joinToString(" · "),style=MaterialTheme.typography.bodyMedium)
@@ -133,12 +165,22 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
                     state.records.asReversed().take(300).forEach { r -> Card(pad){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)){
                         Text("${r.platform.title} · ${r.accountLabel}",fontWeight=FontWeight.SemiBold)
                         Text(r.task);Text("${formatTime(r.time)} · 周期 ${r.period}",style=MaterialTheme.typography.bodySmall)
-                        Text(r.status.title,color=statusColor(r.status));Text(r.message,style=MaterialTheme.typography.bodySmall)
+                        Text(Rules.resultTitle(r.status,r.targetId),color=statusColor(r.status));Text(r.message,style=MaterialTheme.typography.bodySmall)
                         if(r.experienceState.isNotBlank())Text("经验：${r.experienceState}",style=MaterialTheme.typography.bodySmall)
                         if(r.diagnostic.isNotBlank())Text("诊断：${r.diagnostic}",style=MaterialTheme.typography.bodySmall)
                     }}}
                 }
                 3 -> {
+                    Card(pad){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                        Text("外观",style=MaterialTheme.typography.titleMedium)
+                        ThemeMode.entries.forEach { mode ->
+                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                RadioButton(selected=state.settings.themeMode==mode,onClick={mutate{s->s.copy(settings=s.settings.copy(themeMode=mode))}},enabled=!busy)
+                                Text(mode.title)
+                            }
+                        }
+                        Text("跟随系统会随手机的深色模式切换；设置即时生效并保存在本机。",style=MaterialTheme.typography.bodySmall)
+                    }}
                     Card(pad){Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
                         Text("任务开关和角色选择",style=MaterialTheme.typography.titleMedium);Text("在账号页勾选要签到的角色或贴吧。未绑定的游戏无需启用。")
                         SettingSwitch("打开 App 时提示补跑今日未完成任务",state.settings.offerCatchup,!busy){mutate{s->s.copy(settings=s.settings.copy(offerCatchup=it))}}
@@ -166,7 +208,7 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
     }
     if(adding)AccountDialog(app,editing,onClose={adding=false;editingId=null},onError={error=it})
     if(error.isNotBlank())AlertDialog(onDismissRequest={error=""},title={Text("提示")},text={Text(error)},confirmButton={TextButton(onClick={error=""}){Text("确定")}})
-    delete?.let { a -> AlertDialog(onDismissRequest={delete=null},title={Text("删除此账号？")},text={Text("删除 ${a.note.ifBlank{a.displayName}} 的本地凭证、选择和全部历史记录。不会退出官方 App。")},confirmButton={TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.filterNot{it.id==a.id},records=s.records.filterNot{it.accountId==a.id})};delete=null}){Text("删除")}},dismissButton={TextButton(onClick={delete=null}){Text("取消")}}) }
+    delete?.let { a -> AlertDialog(onDismissRequest={delete=null},title={Text("删除此账号？")},text={Text("删除 ${a.note.ifBlank{a.displayName}} 的本地凭证、选择、操作进度和全部历史记录。不会退出官方 App。")},confirmButton={TextButton(onClick={mutate{s->Rules.removeAccount(s,a.id)};delete=null}){Text("删除")}},dismissButton={TextButton(onClick={delete=null}){Text("取消")}}) }
 }
 
 @Composable private fun AccountDialog(app:CheckInApp,previous:Account?,onClose:()->Unit,onError:(String)->Unit) {
@@ -227,14 +269,15 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
     },enabled=!saving&&(previous!=null||manual)){Text(if(previous!=null)"保存备注 / 手动凭证" else "校验手动凭证并保存")}},dismissButton={TextButton(onClick={credential="";onClose()},enabled=!saving){Text("取消")}})
 }
 @Composable private fun SettingSwitch(label:String,value:Boolean,enabled:Boolean=true,onChange:(Boolean)->Unit){Row(verticalAlignment=Alignment.CenterVertically){Text(label,Modifier.weight(1f));Switch(value,onChange,enabled=enabled)}}
-@Composable private fun statusColor(status:TaskStatus):Color=when(status){TaskStatus.SUCCESS,TaskStatus.ALREADY->Color(0xFF087F74);TaskStatus.FAILED,TaskStatus.EXPIRED->MaterialTheme.colorScheme.error;TaskStatus.UNKNOWN,TaskStatus.INTERRUPTED,TaskStatus.MANUAL->Color(0xFF926100);else->MaterialTheme.colorScheme.onSurfaceVariant}
+@Composable private fun statusColor(status:TaskStatus):Color=when(status){TaskStatus.SUCCESS,TaskStatus.ALREADY->Color(LocalThemePalette.current.success);TaskStatus.FAILED,TaskStatus.EXPIRED->MaterialTheme.colorScheme.error;TaskStatus.UNKNOWN,TaskStatus.INTERRUPTED,TaskStatus.MANUAL->Color(LocalThemePalette.current.warning);else->MaterialTheme.colorScheme.onSurfaceVariant}
 private fun formatTime(time:Long)=DateTimeFormatter.ofPattern("MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Shanghai")).format(Instant.ofEpochMilli(time))
 private fun validationError(e:Exception,credential:String)=when(e){is AdapterException->"${e.status.title}：${Rules.safeMessage(e.message,credential)}";is IllegalArgumentException->Rules.safeMessage(e.message?:"凭证格式错误",credential);is java.io.IOException->"连接平台失败，请检查网络后重试";else->"未能可靠校验身份，请检查凭证格式与接入说明（${e.javaClass.simpleName}）"}
-private fun credentialHint(p:Platform)=when(p){Platform.NETEASE->"MUSIC_U 值，或含 MUSIC_U 的网易云 Cookie";Platform.TIEBA->"BDUSS 值，或含 BDUSS 的百度 Cookie";Platform.SKLAND->"鹰角通行证 token，或官方凭证 JSON";Platform.BILIBILI->"含 SESSDATA 和 bili_jct 的 B 站 Cookie"}
-private fun officialUrl(p:Platform)=when(p){Platform.NETEASE->"https://music.163.com/";Platform.TIEBA->"https://tieba.baidu.com/";Platform.SKLAND->"https://user.hypergryph.com/login";Platform.BILIBILI->"https://big.bilibili.com/mobile/index?location=drawExperienceModule"}
+private fun credentialHint(p:Platform)=when(p){Platform.NETEASE->"MUSIC_U 值，或含 MUSIC_U 的网易云 Cookie";Platform.TIEBA->"BDUSS 值，或含 BDUSS 的百度 Cookie";Platform.SKLAND->"鹰角通行证 token，或官方凭证 JSON";Platform.BILIBILI->"含 SESSDATA 和 bili_jct 的 B 站 Cookie";Platform.HEYBOX->"含 heybox_id 和 pkey 的本人小黑盒 Cookie"}
+private fun officialUrl(p:Platform)=when(p){Platform.NETEASE->"https://music.163.com/";Platform.TIEBA->"https://tieba.baidu.com/";Platform.SKLAND->"https://user.hypergryph.com/login";Platform.BILIBILI->"https://big.bilibili.com/mobile/index?location=drawExperienceModule";Platform.HEYBOX->"https://login.xiaoheihe.cn/"}
 private fun credentialHelp(p:Platform)=when(p){
     Platform.NETEASE->"在官方网易云网页版登录。桌面浏览器开发者工具 → Application / 存储 → Cookies → music.163.com，复制 MUSIC_U 到本机输入页。失效后重新登录获取。不要安装来历不明的抓包证书。此版不提供未经验证的密码登录。"
     Platform.TIEBA->"在官方贴吧网页版登录。浏览器开发者工具 → 存储 → Cookies 中复制 BDUSS（若有 STOKEN 可一并输入）。保存后会获取账号身份和关注列表，支持全选或只勾选部分贴吧。失效后从官方重新获取。"
     Platform.SKLAND->"首选上方「官方网页登录并自动导入」，在官方鹰角账号中心完成本次登录。两个账号分别添加并登录，保存后核对不同昵称 / ID 和角色。若你已有本人官方通行证 token 或 {\"cred\":\"官方cred\"}，可在此本地输入，失效需重新授权。账号中心和旧 skland 网页不是同一会话，不要混用 Cookie。不会读取原版或分身 App 的私有数据。"
     Platform.BILIBILI->"在官方 B 站网页版登录，从浏览器开发者工具 → 存储 → Cookies 复制 SESSDATA 和 bili_jct，可一并包含 DedeUserID。Cookie 在本机使用。需先满足大会员与等级资格，并手动看视频至少一分钟；本工具只领取等级加速包，不执行播放或其他签到。"
+    Platform.HEYBOX->"首选上方官方网页登录，小黑盒登录中心完成账号登录和必要验证后自动导入。备用方式是在自己的官方浏览器会话中取得 heybox_id/pkey（或 user_heybox_id/user_pkey），可含官网生成的 x_xhh_tokenid；这是安全组件值，本工具不会伪造。凭证仅在本机输入。只执行每日签到，随后从任务中心确认签到任务，不补签、不领其他奖励。"
 }

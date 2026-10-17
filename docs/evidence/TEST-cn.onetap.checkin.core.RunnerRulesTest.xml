@@ -1,20 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.core.RunnerRulesTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-10-17T07:38:54.527Z" hostname="PC-20260405TBKV" time="0.702">
+<testsuite name="cn.onetap.checkin.core.RunnerRulesTest" tests="15" skipped="0" failures="0" errors="0" timestamp="2026-10-17T08:12:27.726Z" hostname="PC-20260405TBKV" time="0.527">
   <properties/>
-  <testcase name="unboundTargetsAreNotSelected" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.002"/>
-  <testcase name="failedRoleDoesNotBlockOtherRoleOrAccount" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.491"/>
-  <testcase name="timeoutWithoutStateQueryNeverRepeatsWrite" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.016"/>
-  <testcase name="dayBoundaryAndRedaction" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.048"/>
-  <testcase name="unfinishedRecordsRecoverAsInterrupted" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.001"/>
-  <testcase name="expiryStopsRemainingWritesForThatAccount" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.007"/>
-  <testcase name="removedBindingOrUnfollowedForumNeverWrites" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.007"/>
-  <testcase name="cancellationDuringQueryNeverStartsWrite" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.041"/>
-  <testcase name="twoAccountsAndGamesKeepIndependentHistory" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.016"/>
-  <testcase name="timeoutReconcilesConfirmedSuccess" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.01"/>
-  <testcase name="concurrentTriggerDoesNotDoubleWrite" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.014"/>
-  <testcase name="completedTasksAreSkippedAndUnknownIsRetriable" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.029"/>
-  <testcase name="identityMismatchNeverWrites" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.006"/>
-  <testcase name="duplicateIdentityAndCredentialSwitchAreRejected" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.007"/>
+  <testcase name="unboundTargetsAreNotSelected" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.0"/>
+  <testcase name="failedRoleDoesNotBlockOtherRoleOrAccount" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.276"/>
+  <testcase name="refreshedSessionIsSavedAndRereadAfterQueryAndForNextTarget" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.031"/>
+  <testcase name="timeoutWithoutStateQueryNeverRepeatsWrite" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.013"/>
+  <testcase name="dayBoundaryAndRedaction" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.017"/>
+  <testcase name="unfinishedRecordsRecoverAsInterrupted" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.003"/>
+  <testcase name="expiryStopsRemainingWritesForThatAccount" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.012"/>
+  <testcase name="removedBindingOrUnfollowedForumNeverWrites" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.01"/>
+  <testcase name="cancellationDuringQueryNeverStartsWrite" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.05"/>
+  <testcase name="twoAccountsAndGamesKeepIndependentHistory" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.033"/>
+  <testcase name="timeoutReconcilesConfirmedSuccess" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.013"/>
+  <testcase name="concurrentTriggerDoesNotDoubleWrite" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.01"/>
+  <testcase name="completedTasksAreSkippedAndUnknownIsRetriable" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.03"/>
+  <testcase name="identityMismatchNeverWrites" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.01"/>
+  <testcase name="duplicateIdentityAndCredentialSwitchAreRejected" classname="cn.onetap.checkin.core.RunnerRulesTest" time="0.004"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

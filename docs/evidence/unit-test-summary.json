@@ -1,9 +1,16 @@
 {
-  "tests": 78.0,
+  "tests": 127.0,
   "failures": 0.0,
   "errors": 0.0,
   "skipped": 0.0,
   "suites": [
+    {
+      "name": "cn.onetap.checkin.core.ActionCheckpointTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
     {
       "name": "cn.onetap.checkin.core.MusicMigrationTest",
       "tests": 3,
@@ -20,7 +27,14 @@
     },
     {
       "name": "cn.onetap.checkin.core.RunnerRulesTest",
-      "tests": 14,
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "cn.onetap.checkin.core.ThemeSettingsTest",
+      "tests": 6,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -54,6 +68,13 @@
       "skipped": 0
     },
     {
+      "name": "cn.onetap.checkin.platform.HeyboxAdapterTest",
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
       "name": "cn.onetap.checkin.platform.MusicTiebaAdapterTest",
       "tests": 11,
       "failures": 0,
@@ -70,6 +91,13 @@
     {
       "name": "cn.onetap.checkin.platform.SklandAdapterTest",
       "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "cn.onetap.checkin.platform.TiebaLikeTaskTest",
+      "tests": 17,
       "failures": 0,
       "errors": 0,
       "skipped": 0

@@ -1,6 +1,6 @@
 # 官方网页登录与自动导入
 
-核查日期：2026-10-17。版本：0.3.0。用户反馈0.2.0在 Redmi K90 Ultra / Android17 的网易云、森空岛登录整页白屏，贴吧与B站可添加账号；未反馈真实签到结果。新版修复与 JVM 测试不等于该手机的网页登录验证。平台页面、验证码和 WebView 支持仍可能变化。
+核查日期：2026-10-17。版本：0.4.0。用户在0.3.0交付后回复「测试完成，都可以正常签到」，原有四平台视为用户报告验收；开发侧没有本人凭证或独立真机验证。新增小黑盒尚待用户登录验证。平台页面、验证码和 WebView 支持仍可能变化。
 
 ## 此次修复依据
 
@@ -16,8 +16,11 @@
 | 百度贴吧 | https://tieba.baidu.com/ | 本工具 WebView 的 BDUSS、可选 STOKEN；复用贴吧适配器校验身份并刷新关注列表 |
 | 森空岛 | https://user.hypergryph.com/login | 仅在此精确官方 origin 读取 HG_SDK.User.getToken()，要求 result===true 与 data.token 字符串；随后由既有森空岛适配器换授权并校验真实 ID 与绑定游戏 / 角色。不混用 skland 域 Cookie |
 | 哔哩哔哩 | https://passport.bilibili.com/login | 本工具 WebView 的 SESSDATA、bili_jct 等白名单 Cookie；复用 B 站适配器校验 UID 与等级加速包资格。网页登录不等于完成观看条件或领取 |
+| 小黑盒 | https://login.xiaoheihe.cn/?redirect_url=https%3A%2F%2Fwww.xiaoheihe.cn%2F | 本工具 WebView 的 pkey / user_pkey、heybox_id / user_heybox_id，以及官网生成的可选 x_xhh_tokenid；向官方 restore_login 校验 ID 并保留其刷新会话 |
 
 检测到完整 Cookie 后最多自动进行三次不同授权的身份校验，避免重复轮询网络；也可点「登录完成，检测账号」。没有完整授权、验证不通过或官方验证码未完成时不会添加账号。自动导入仍经主界面再次校验和重复身份检查，更新时要求与旧账号平台 ID 相同。
+
+0.4.0 小黑盒仅新增主框架精确主机 `login.xiaoheihe.cn`、`www.xiaoheihe.cn`、`api.xiaoheihe.cn`。所需 Cookie 在这三个 HTTPS 站点读取，只取白名单字段；会话通过一次性内存票据传回，经再次身份校验保存。不读官方 App 私有数据，不自动生成安全 token。登录原生控件跟随本工具的外观设置，官网自身配色由站点和系统 WebView 支持决定。
 
 主文档仅允许 HTTPS 443 的确切官方主机：网易云 music.163.com / y.music.163.com / st.music.163.com / reg.163.com / dl.reg.163.com / passport.163.com；贴吧 tieba.baidu.com / wappass.baidu.com / passport.baidu.com / wappass.bdimg.com；森空岛 www.skland.com / m.skland.com / web-api.skland.com / user.hypergryph.com / as.hypergryph.com；B 站 passport.bilibili.com / www.bilibili.com / m.bilibili.com / big.bilibili.com / api.bilibili.com。精确名单位于 OfficialLoginPolicy.kt。页面 HTTPS 子资源与安全的 about:blank 子框架可加载；不向子资源主动注入平台 Cookie。需要其他主机时先核实；不开放通配或 HTTP。
 

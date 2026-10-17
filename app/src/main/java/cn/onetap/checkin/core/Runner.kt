@@ -30,9 +30,15 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
                 // A refreshed credential can never silently execute against another identity.
                 var currentTargetIds: Set<String> = emptySet()
                 val validation = try {
-                    val actual = readWithRetry { adapter.validate(account.credential) }
+                    var validatedCredential = ""
+                    val actual = readWithRetry { validatedCredential=currentCredential(account);adapter.validate(validatedCredential) }
                     currentTargetIds=actual.targets.filter { it.bound }.map { it.id }.toSet()
-                    if (actual.userId != account.userId) TaskResult(TaskStatus.EXPIRED,"当前凭证身份与保存账号不一致，请更新凭证") else null
+                    if (actual.userId != account.userId) TaskResult(TaskStatus.EXPIRED,"当前凭证身份与保存账号不一致，请更新凭证") else {
+                        actual.updatedCredential?.let { fresh -> store.update { s -> s.copy(accounts=s.accounts.map {
+                            if(it.id==account.id && it.platform==account.platform && it.userId==actual.userId && it.credential==validatedCredential) it.copy(credential=fresh) else it
+                        }) } }
+                        null
+                    }
                 } catch (e: CancellationException) { throw e } catch (e: Exception) { failure(e,account.credential) }
                 var stopAccount: TaskResult? = validation
                 for (target in targets) {
@@ -41,7 +47,7 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
                     val record = Record(accountId=account.id,platform=account.platform,accountLabel=account.note.ifBlank { account.displayName },targetId=target.id,task=listOf(target.game,target.label,target.server).filter { it.isNotBlank() }.joinToString(" · "),period=Rules.period(target),status=TaskStatus.RUNNING,message="正在执行")
                     store.update { it.copy(records=(it.records+record).takeLast(3000)) }
                     val result = stopAccount ?: if(target.id !in currentTargetIds) TaskResult(TaskStatus.UNBOUND,"此目标已不在当前账号的绑定或关注列表，未执行；请刷新账号") else try {
-                        val known = readWithRetry { adapter.query(account.credential,target) }
+                        val known = readWithRetry { adapter.query(currentCredential(account),target) }
                         currentCoroutineContext().ensureActive()
                         if (known != null && known.status != TaskStatus.PENDING) known
                         else if(known==null && Rules.completed(Rules.latest(snapshot,account,target)?.status?:TaskStatus.PENDING)) {
@@ -50,9 +56,10 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
                         } else executeWithReconciliation(adapter,account,target)
                     } catch(e: CancellationException) { finish(record,TaskResult(TaskStatus.INTERRUPTED,"任务被中断，结果待确认")); throw e }
                       catch(e: Exception) { failure(e,account.credential) }
-                    val safe = result.copy(message=Rules.safeMessage(result.message,account.credential),diagnostic=Rules.safeDiagnostic(result.diagnostic),experienceState=Rules.safeMessage(result.experienceState,account.credential))
+                    fun redact(value: String) = Rules.safeMessage(Rules.safeMessage(value,account.credential),currentCredential(account))
+                    val safe = result.copy(message=redact(result.message),diagnostic=Rules.safeDiagnostic(result.diagnostic),experienceState=redact(result.experienceState))
                     finish(record,safe)
-                    progress("${account.platform.title} · ${target.label} · ${safe.status.title}")
+                    progress("${account.platform.title} · ${target.label} · ${Rules.resultTitle(safe.status,target.id)}")
                     if (Rules.completed(safe.status)) completed++
                     if (safe.status in setOf(TaskStatus.EXPIRED,TaskStatus.MANUAL)) stopAccount=safe
                 }
@@ -62,18 +69,21 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
     }
     private suspend fun executeWithReconciliation(adapter: PlatformAdapter,account: Account,target: Target): TaskResult {
         currentCoroutineContext().ensureActive()
-        try { return runInterruptible(Dispatchers.IO) { adapter.execute(account.credential,target) } }
+        try { return runInterruptible(Dispatchers.IO) { adapter.execute(currentCredential(account),target) } }
         catch(e: IOException) {
             // POST may have reached the server. Only retry if a read proves it did not complete.
-            val status = try { readWithRetry { adapter.query(account.credential,target) } } catch (_: IOException) { null }
+            val status = try { readWithRetry { adapter.query(currentCredential(account),target) } } catch (_: IOException) { null }
             if (status != null && status.status != TaskStatus.PENDING) return status
             if (status?.status == TaskStatus.PENDING) {
                 delay(1500)
-                return try { runInterruptible(Dispatchers.IO) { adapter.execute(account.credential,target) } } catch (_: IOException) { TaskResult(TaskStatus.UNKNOWN,"重试请求超时，结果待确认；请稍后查询") }
+                return try { runInterruptible(Dispatchers.IO) { adapter.execute(currentCredential(account),target) } } catch (_: IOException) { TaskResult(TaskStatus.UNKNOWN,"重试请求超时，结果待确认；请稍后查询") }
             }
             return TaskResult(TaskStatus.UNKNOWN,"请求中断，服务端可能已执行；请稍后重试确认")
         }
     }
+    private fun currentCredential(account: Account): String = store.read().accounts.singleOrNull {
+        it.id == account.id && it.platform == account.platform && it.userId == account.userId
+    }?.credential?.takeIf { it.isNotBlank() } ?: throw AdapterException(TaskStatus.EXPIRED,"本地授权已退出或账号已删除")
     private suspend fun <T> readWithRetry(action: () -> T): T {
         try { return runInterruptible(Dispatchers.IO) { action() } } catch (_: IOException) { delay(900); return runInterruptible(Dispatchers.IO) { action() } }
     }

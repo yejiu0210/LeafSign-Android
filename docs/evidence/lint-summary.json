@@ -1,6 +1,6 @@
 {
   "errors": 0,
-  "warnings": 18,
+  "warnings": 19,
   "issues": [
     {
       "id": "AndroidGradlePluginVersion",
@@ -61,6 +61,11 @@
       "id": "GetInstance",
       "severity": "Warning",
       "message": "ECB encryption mode should not be used (was \"AES/ECB/PKCS5Padding\")"
+    },
+    {
+      "id": "UseKtx",
+      "severity": "Warning",
+      "message": "Use the KTX extension function `Int.toDrawable` instead?"
     },
     {
       "id": "UseKtx",

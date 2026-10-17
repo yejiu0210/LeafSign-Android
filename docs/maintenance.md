@@ -2,6 +2,12 @@
 
 入口为 `PlatformAdapter.validate / query / execute`，统一执行逻辑在 `core/Runner.kt`。平台实现相互独立；不需要插件框架或后端。
 
+0.4.0 新增 `HeyboxAdapter`，只使用已核实的官方网页签名协议与三个固定 API。`restore_login` 返回的新 `pkey` 必须通过 `Identity.updatedCredential` 供新账号保存，已存账号用平台、UID、原始凭证比较后更新；Runner 每次请求重新读取该账号最新凭证，避免用快照中失效的旧会话。任务中心唯一 type=sign 且明确 finish 才认为今日完成，写入未知但查询完成不冒报本次成功。见 `integration-heybox.md`。
+
+贴吧新增独立目标 `tieba:like:<forumId>`，默认关闭，与签到勾选分开。`TiebaLikeTask` 的账号、目标、周期 checkpoint 在现有 AES-GCM 状态中保存，写请求前必须落盘；同吧当日固定一帖，取消最多一次、同帖点赞最多两次。恢复先查明确的本人点赞状态，不能重新选帖、推测未点赞或把点赞成功当作经验到账。删除账号也删操作进度。详见 `integration-tieba-like.md`。
+
+夜间模式存为 `Settings.themeMode`（SYSTEM / LIGHT / DARK），缺失或未知值回退跟随系统；旧加密数据无需迁移或清空。`ThemePalette` 同时供 Compose 和原生登录控件使用，官网不注入改色 CSS；WebView 仅开启系统支持的深色算法。
+
 0.3.0 登录入口在 `login/WebLoginActivity.kt`，固定原生控件与WebView分离；`OfficialLoginPolicy` 管精确导航，`WebLoginCookieClear` 的进程栅栏保证超时/Activity取消不会取消底层清理。只负责官网授权和身份校验，不执行签到。`LoginResultBroker` 只传一次性内存票据，不能把 Credential 放进 Activity result / Bundle / saved state。森空岛仅精确官方portal调用其已核对SDK，临时值读取后delete；JS3秒/整体12秒超时，读取与校验期间隐藏网页。保留主框架HTTPS、仅安全about:blank子frame、SSL拒绝和会话清理。见 `integration-web-login.md`。
 
 网易当前目标为黑胶乐签：`netease:vip:music-sign`，协议见 `integration-netease-vip.md`。不复用旧ordinary dailyTask的-2或完成记录；状态查询只能调用minidesk，history/detail属于两步写链路。EAPI固定ECB是服务端协议兼容包络，不能自行改AES模式；仍必须保留TLS和本地AES-GCM。未知明细即使查到今日完成也只显示ALREADY，不宣称本次未知请求成功。

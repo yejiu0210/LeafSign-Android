@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="cn.onetap.checkin.platform.TiebaLikeTaskTest" tests="17" skipped="0" failures="0" errors="0" timestamp="2026-10-17T08:12:29.354Z" hostname="PC-20260405TBKV" time="0.146">
+  <properties/>
+  <testcase name="wrongOwnerOrForumNeverGetsLiked" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.019"/>
+  <testcase name="eachFollowedForumGetsItsOwnThreadAndIndependentDailyLimit" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.025"/>
+  <testcase name="malformedCheckpointNeverSelectsAnotherThread" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.003"/>
+  <testcase name="interruptedUnlikeResumesOnlyAfterReadConfirmsUnliked" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.006"/>
+  <testcase name="responseCodesAndPersonalStateMustBeExplicit" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.022"/>
+  <testcase name="anotherForumsCheckpointOrMismatchedTargetCannotBeReused" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.003"/>
+  <testcase name="accountAndPeriodCheckpointsStayIsolated" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.007"/>
+  <testcase name="threadIdentityAndAnonymousPagesCannotProveOwnVote" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.007"/>
+  <testcase name="freshTaskIsOptInAndQueryDoesNotPretendYesterdaysLikeIsToday" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.0"/>
+  <testcase name="confirmedUnlikedReadAllowsOnlySecondSameThreadLikeAttempt" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.01"/>
+  <testcase name="likeTimeoutIsReconciledWithReadAndNeverSwitchesThread" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.012"/>
+  <testcase name="alreadyLikedThreadIsCancelledOnceThenLikedOnce" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.003"/>
+  <testcase name="unknownReadNeverLeadsToMutation" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.002"/>
+  <testcase name="unlikedThreadGetsExactlyOneLikeAndCheckpointsBeforeWrite" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.005"/>
+  <testcase name="resumedTaskNeverChangesToAnotherForumIfTheSelectedOneWasUnfollowed" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.002"/>
+  <testcase name="unlikeTimeoutWithoutConfirmedUnlikedStateNeverCancelsAgain" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.006"/>
+  <testcase name="cuidMatchesIndependentUpstreamCryptoVector" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
