@@ -1,2 +1,64 @@
-# one-tap-checkin-android
-个人 Android 一键签到：网易云音乐、百度贴吧、森空岛多账号角色与大会员等级加速包。Kotlin / Compose，本地加密凭证。
+# 一键签到 0.1.0
+
+个人使用的原生 Android 应用，Kotlin / Jetpack Compose，Android 8.0（API 26）以上。第一版完全本地运行，平台凭证仅发送到适配器内列出的官方域名。无自建服务器、公共中转、Root 或无障碍要求。
+
+私人项目仓库：[yejiu0210/one-tap-checkin-android](https://github.com/yejiu0210/one-tap-checkin-android)。APK 通过该仓库 Releases 交付，需要本人有权限的 GitHub 账号登录查看。
+
+此交付包含真实 HTTP 适配器，不包含生产模拟成功分支。**构建、解析单测、模拟器和真实账号验证是不同证据，实际完成情况见 `docs/verification.md`。没有真实账号测试，不能保证平台对你的账号开放相同接口或通过风控。**
+
+## 安装与操作
+
+1. 将交付的 APK 复制到手机，点击安装；按系统提示允许当前文件来源安装应用。本包为个人测试版，不上传商店。
+2. 打开「账号 → 添加账号」，选择平台，填写备注，在手机本地输入凭证，点「校验身份并保存」。不用把凭证交给聊天助手。会从官方接口校验并显示昵称、ID、角色或关注贴吧；相同平台 ID 不能重复添加。
+3. 森空岛主账号和分身账号分别添加，备注「主账号」「分身账号」。两个账号应显示不同森空岛 ID。展开各账号选择方舟、终末地具体角色及区服。未绑定游戏显示「未绑定」，不算失败。
+4. 贴吧可全选或只勾选需要签到的吧。首页点「一键签到」，等待分项结果；某项失败不会阻止其他独立任务。
+5. 登录失效时，在「账号 → 备注 / 更新凭证」输入重新从官方取得的凭证。只允许更新为同一个平台身份；更换账号请另外添加。可修改备注，凭证留空保留原值。
+6. 「仅重试失败 / 待确认项」只选择失败、未知或中断项。资格不足、登录失效和手动验证需要先解决原因后再点完整一键签到。不要反复点击绕过平台限制。
+7. 「退出本地授权」清除本地凭证并停用任务，保留历史；「删除账号和记录」删除该账号全部本地数据。不会注销官方 App 会话。
+
+## 凭证获取
+
+所有凭证仅在官方网页登录后获取，等同于登录授权，务必自己保管。App 内也有说明和官方入口。第一版选择手动导入经过校验的网页凭证，没有实现未经核实的密码、短信或二维码登录。
+
+- **网易云音乐**：在 `https://music.163.com/` 登录。桌面浏览器开发者工具 → Application / 存储 → Cookies，复制 `MUSIC_U` 值；也可输入含 `MUSIC_U`、可选 `__csrf` 的 Cookie。只执行每日 Android 签到 `type=0`。
+- **贴吧**：在 `https://tieba.baidu.com/` 登录，复制 Cookie 内的 `BDUSS`；可输入完整 Cookie，适配器只选用 `BDUSS` 和可选 `STOKEN`。保存会刷新关注列表。若网页 Cookie 被风控，请先在官方完成验证，再更新。
+- **森空岛**：在 `https://www.skland.com/` 登录第一个账号，然后在**同一浏览器会话**打开 `https://web-api.skland.com/account/info/hg`，把 `data.content` token 或完整官方 JSON 输入 App。第二账号需先在官网退出并登录另一个账号，再获取它自己的 token。不要复用主账号 token。App 也支持 `{"cred":"官方cred"}` 的手动凭证；设备标识等高级格式见接入文档。无法获得网页登录 token 时，应保留报错并反馈官方页面情况，不读取手机 App 的私有目录。
+- **B 站**：在 `https://www.bilibili.com/` 登录，复制 `SESSDATA` 和 `bili_jct`，格式 `SESSDATA=…; bili_jct=…`，可含 `DedeUserID`。执行的是 [会员中心等级加速包](https://big.bilibili.com/mobile/index?location=drawExperienceModule)，需要有效大会员、LV1 以上及**手动在官方观看视频一分钟**。不会执行积分签到、普通登录、直播签到或刷播放；不会购买、续费或使用付费资源。
+
+在电脑获取凭证后通过你信任的个人方式传到手机本地，避免公共剪贴板、公共文档和第三方抓包服务；使用后可清理剪贴板。凭证有效期由平台控制，没有保证长期不失效的刷新机制。森空岛会用通行证 token 重新获取短期 cred / 签名 token。
+
+## 结果说明
+
+成功与今日已签到都必须有明确业务字段支持；HTTP 200、缺字段、未知错误码、游客日历均不等于成功。未绑定、资格不足、登录失效、手动验证、失败、待确认及尚未接入分别显示。B 站领取与经验到账分开显示；平台维护期间只显示领取受理、经验待发，不虚构到账数值。
+
+断网或超时的写请求可能已经到达服务器。只有只读查询明确证明未执行时才会有限重试；查不到状态会保留待确认，由用户稍后重试。进程中断留下的执行中记录会恢复为中断待确认。
+
+**精确日重置时刻尚未获全部平台官方证据。**本地展示暂按北京时间 00:00 分日，平台只读状态优先；无可靠状态查询的平台在本地当日已完成后不会重复写入。这一边界仍需真实账号跨日验证，不能把本地日期缓存当成服务端已签到证据。
+
+## 可选后台
+
+先在前台完成至少一项平台明确确认的签到，设置页才允许开启后台任务。WorkManager 使用网络约束，每约 24 小时执行，初始时间按北京时间 HH:mm 设置；不保证准点，可能受省电、厂商策略、任务运行时长限制。系统强制停止后需要重新打开。开启通知需授予通知权限。默认关闭后台，仅补跑当天，不补历史、不消耗补签资源。
+
+## 构建
+
+固定工具链：JDK 17、Gradle 8.13、Android Gradle Plugin 8.11.1、Kotlin / Compose 编译插件 2.1.20、Compose BOM 2025.04.01、compile/target SDK 36、Build Tools 35.0.0。依赖来自 Google Maven / Maven Central。已带 Gradle Wrapper 和校验值。
+
+用 Android Studio 导入此目录，安装 SDK 36 和 Build Tools 35.0.0。或在 Windows PowerShell 执行：
+
+```powershell
+.\Build.ps1 -JavaHome 'C:\path\to\jdk-17' -SdkPath 'C:\path\to\android-sdk'
+```
+
+手动命令：
+
+```powershell
+.\gradlew.bat :app:assembleRelease :app:testDebugUnitTest :app:lintRelease
+# 连接自己授权的测试设备或启动模拟器后：
+.\gradlew.bat :app:connectedDebugAndroidTest
+```
+
+生成 `app/build/outputs/apk/release/app-release.apk`。交付 APK 为关闭调试的 release 构建，使用本机开发测试签名；设备测试使用同源码 debug 变体。后续覆盖安装必须使用同一签名；自行重建若签名不同需卸载旧包，卸载会丢失本地密钥和数据。交付源码不包含签名私钥、凭证或本机 SDK 路径。
+
+## 维护
+
+见 `docs/maintenance.md`、各平台 integration 文档和 `docs/verification.md`。本项目新写代码采用 MIT；协议参考的上游许可证保留在接入文档。仅适配普通免费签到，不扩展自动评论、刷播放、投币、兑换、购买或付费补签。
