@@ -174,6 +174,7 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
     var note by rememberSaveable {mutableStateOf(previous?.note?:"")}
     var credential by remember {mutableStateOf("")}
     var saving by remember {mutableStateOf(false)}
+    var loggingIn by remember {mutableStateOf(false)}
     var help by remember {mutableStateOf(false)}
     var manual by rememberSaveable {mutableStateOf(false)}
     val context=androidx.compose.ui.platform.LocalContext.current
@@ -189,6 +190,7 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
         }catch(e:Exception){onError(validationError(e,raw))}finally{saving=false}}}
     }
     val officialLogin=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        loggingIn=false
         if(result.resultCode==Activity.RESULT_OK) {
             val raw=result.data?.getStringExtra(WebLoginActivity.EXTRA_TICKET)?.let {LoginResultBroker.take(it,platform)}
             if(raw==null)onError("登录结果已过期或进程中断，请重新进行官方网页登录")
@@ -200,8 +202,11 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
             if(previous==null)Platform.entries.forEach { p -> Row(verticalAlignment=Alignment.CenterVertically){RadioButton(platform==p,{if(platform!=p){platform=p;credential=""}},enabled=!saving);Text(p.title)} }
             else Text("${previous.platform.title} · ${previous.displayName}")
             OutlinedTextField(note,{note=it.take(40)},label={Text("备注，如主账号 / 分身账号")},enabled=!saving,singleLine=true)
-            Button(onClick={officialLogin.launch(Intent(context,WebLoginActivity::class.java).putExtra(WebLoginActivity.EXTRA_PLATFORM,platform.name))},enabled=!saving,modifier=Modifier.fillMaxWidth()){Text("官方网页登录并自动导入")}
+            Button(onClick={
+                if(!loggingIn){loggingIn=true;try{officialLogin.launch(Intent(context,WebLoginActivity::class.java).putExtra(WebLoginActivity.EXTRA_PLATFORM,platform.name))}catch(_:Exception){loggingIn=false;onError("未能打开登录页，请重新打开应用后再试")}}
+            },enabled=!saving&&!loggingIn,modifier=Modifier.fillMaxWidth()){Text(if(loggingIn)"官方登录处理中…" else "官方网页登录并自动导入")}
             Text("在本工具内登录所选平台，识别身份后自动保存。每次网页登录使用独立的临时会话；不会读取原版或分身 App 的私有文件。",style=MaterialTheme.typography.bodySmall)
+            if(platform==Platform.NETEASE)Text("签到目标：黑胶乐签。旧版普通每日签到已停用，不执行听歌、评论、兑换或购买任务。",style=MaterialTheme.typography.bodySmall)
             if(previous!=null)Text("更新登录必须仍为 ${previous.displayName}；其他账号请另行添加。",style=MaterialTheme.typography.bodySmall)
             TextButton(onClick={manual=!manual}){Text("手动导入凭证（备用）")}
             if(manual){
@@ -213,7 +218,6 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
             if(help){
                 Text(credentialHelp(platform),style=MaterialTheme.typography.bodySmall)
                 TextButton(onClick={context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(officialUrl(platform))))}){Text("打开官方入口")}
-                if(platform==Platform.SKLAND)TextButton(onClick={context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://web-api.skland.com/account/info/hg")))}){Text("登录官网后获取本人 Token")}
             }
             if(saving)LinearProgressIndicator(Modifier.fillMaxWidth())
         }
@@ -227,10 +231,10 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
 private fun formatTime(time:Long)=DateTimeFormatter.ofPattern("MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Shanghai")).format(Instant.ofEpochMilli(time))
 private fun validationError(e:Exception,credential:String)=when(e){is AdapterException->"${e.status.title}：${Rules.safeMessage(e.message,credential)}";is IllegalArgumentException->Rules.safeMessage(e.message?:"凭证格式错误",credential);is java.io.IOException->"连接平台失败，请检查网络后重试";else->"未能可靠校验身份，请检查凭证格式与接入说明（${e.javaClass.simpleName}）"}
 private fun credentialHint(p:Platform)=when(p){Platform.NETEASE->"MUSIC_U 值，或含 MUSIC_U 的网易云 Cookie";Platform.TIEBA->"BDUSS 值，或含 BDUSS 的百度 Cookie";Platform.SKLAND->"鹰角通行证 token，或官方凭证 JSON";Platform.BILIBILI->"含 SESSDATA 和 bili_jct 的 B 站 Cookie"}
-private fun officialUrl(p:Platform)=when(p){Platform.NETEASE->"https://music.163.com/";Platform.TIEBA->"https://tieba.baidu.com/";Platform.SKLAND->"https://www.skland.com/";Platform.BILIBILI->"https://big.bilibili.com/mobile/index?location=drawExperienceModule"}
+private fun officialUrl(p:Platform)=when(p){Platform.NETEASE->"https://music.163.com/";Platform.TIEBA->"https://tieba.baidu.com/";Platform.SKLAND->"https://user.hypergryph.com/login";Platform.BILIBILI->"https://big.bilibili.com/mobile/index?location=drawExperienceModule"}
 private fun credentialHelp(p:Platform)=when(p){
     Platform.NETEASE->"在官方网易云网页版登录。桌面浏览器开发者工具 → Application / 存储 → Cookies → music.163.com，复制 MUSIC_U 到本机输入页。失效后重新登录获取。不要安装来历不明的抓包证书。此版不提供未经验证的密码登录。"
     Platform.TIEBA->"在官方贴吧网页版登录。浏览器开发者工具 → 存储 → Cookies 中复制 BDUSS（若有 STOKEN 可一并输入）。保存后会获取账号身份和关注列表，支持全选或只勾选部分贴吧。失效后从官方重新获取。"
-    Platform.SKLAND->"先打开 www.skland.com，在官方网页登录一个账号；同一浏览器访问 https://web-api.skland.com/account/info/hg，复制 data.content 的 token 或整段 JSON 到此。添加第二账号前在官网退出并登录另一个账号，再获取其 token。保存后核对不同昵称 / ID 和角色。支持可选 {\"cred\":\"官方cred\"}，失效需重新获取。不会读取原版或分身 App 的私有数据。"
+    Platform.SKLAND->"首选上方「官方网页登录并自动导入」，在官方鹰角账号中心完成本次登录。两个账号分别添加并登录，保存后核对不同昵称 / ID 和角色。若你已有本人官方通行证 token 或 {\"cred\":\"官方cred\"}，可在此本地输入，失效需重新授权。账号中心和旧 skland 网页不是同一会话，不要混用 Cookie。不会读取原版或分身 App 的私有数据。"
     Platform.BILIBILI->"在官方 B 站网页版登录，从浏览器开发者工具 → 存储 → Cookies 复制 SESSDATA 和 bili_jct，可一并包含 DedeUserID。Cookie 在本机使用。需先满足大会员与等级资格，并手动看视频至少一分钟；本工具只领取等级加速包，不执行播放或其他签到。"
 }

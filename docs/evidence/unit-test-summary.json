@@ -1,9 +1,16 @@
 {
-  "tests": 53.0,
+  "tests": 78.0,
   "failures": 0.0,
   "errors": 0.0,
   "skipped": 0.0,
   "suites": [
+    {
+      "name": "cn.onetap.checkin.core.MusicMigrationTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
     {
       "name": "cn.onetap.checkin.core.NetClientSecurityTest",
       "tests": 5,
@@ -19,8 +26,22 @@
       "skipped": 0
     },
     {
+      "name": "cn.onetap.checkin.login.CookieClearFenceTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
       "name": "cn.onetap.checkin.login.LoginResultBrokerTest",
       "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "cn.onetap.checkin.login.OfficialLoginPolicyTest",
+      "tests": 6,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -35,6 +56,13 @@
     {
       "name": "cn.onetap.checkin.platform.MusicTiebaAdapterTest",
       "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "cn.onetap.checkin.platform.NeteaseVipTest",
+      "tests": 13,
       "failures": 0,
       "errors": 0,
       "skipped": 0

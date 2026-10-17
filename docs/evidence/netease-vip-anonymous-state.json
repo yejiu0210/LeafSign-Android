@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-17",
+  "authentication": "none; anonymous read-only query",
+  "endpoint": "https://interfacepc.music.163.com/eapi/vipnewcenter/app/minidesk/music/sign/pc",
+  "type": 1,
+  "code": 200,
+  "data": {
+    "text": "10月黑胶乐签",
+    "subText": "每月打卡得VIP体验",
+    "signInfoList": [
+      {
+        "today": false,
+        "sign": false,
+        "signTime": 0
+      },
+      {
+        "today": false,
+        "sign": false,
+        "signTime": 0
+      },
+      {
+        "today": false,
+        "sign": false,
+        "signTime": 0
+      }
+    ]
+  }
+}

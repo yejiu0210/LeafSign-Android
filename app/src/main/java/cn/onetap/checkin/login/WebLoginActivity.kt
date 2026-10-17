@@ -3,114 +3,161 @@ package cn.onetap.checkin.login
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
-import android.webkit.CookieManager
-import android.webkit.SslErrorHandler
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebStorage
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.os.SystemClock
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.webkit.*
+import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnPreDraw
 import androidx.lifecycle.lifecycleScope
 import cn.onetap.checkin.CheckInApp
 import cn.onetap.checkin.core.AdapterException
 import cn.onetap.checkin.core.Platform
 import cn.onetap.checkin.core.TaskStatus
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONTokener
+import kotlinx.coroutines.*
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.io.ByteArrayInputStream
+import java.security.MessageDigest
+import java.util.UUID
+import kotlin.math.max
+import kotlin.coroutines.resume
 
-/** A fresh official website session belonging to this app, never another app's private files. */
+/** Native controls remain visible even if the official website or its renderer fails. */
 class WebLoginActivity : ComponentActivity() {
     companion object {
         const val EXTRA_PLATFORM = "platform"
         const val EXTRA_TICKET = "ticket"
+        const val TITLE_TAG = "official_login_title"
+        const val BACK_TAG = "official_login_back"
+        const val STATUS_TAG = "official_login_status"
+        const val RETRY_TAG = "official_login_retry"
+        const val BROWSER_TAG = "official_login_browser"
         private const val SK_TOKEN_URL = "https://web-api.skland.com/account/info/hg"
     }
 
     private lateinit var platform: Platform
-    private var page by mutableStateOf<WebView?>(null)
-    private var status by mutableStateOf("正在清理上次登录会话…")
-    private var host by mutableStateOf("")
-    private var loading by mutableStateOf(true)
-    private var checking by mutableStateOf(false)
-    private var hidePage by mutableStateOf(false)
-    private var closing by mutableStateOf(false)
+    private lateinit var browserContainer: FrameLayout
+    private lateinit var placeholder: TextView
+    private lateinit var statusText: TextView
+    private lateinit var domainText: TextView
+    private lateinit var progressBar: ProgressBar
+    private lateinit var detectButton: Button
+    private lateinit var retryButton: Button
+    private lateinit var backButton: Button
+    private var page: WebView? = null
+    private var pageTimeout: Job? = null
+    private var sessionTimeout: Job? = null
+    private var validationJob: Job? = null
+    private var sklandProbeJob: Job? = null
+    private var sessionGeneration = 0
+    private var navigationGeneration = 0
+    private var failedNavigation = false
+    private var preparing = true
+    private var loading = false
+    private var checking = false
+    private var hidePage = false
+    private var closing = false
     private var cleaned = false
     private var autoChecks = 0
-    private var lastAutoCredential = ""
-
-    private val startUrl: String get() = when (platform) {
-        Platform.NETEASE -> "https://music.163.com/"
-        Platform.TIEBA -> "https://tieba.baidu.com/"
-        Platform.SKLAND -> "https://www.skland.com/"
-        Platform.BILIBILI -> "https://passport.bilibili.com/login"
-    }
-    private val navigationHosts: Set<String> get() = when (platform) {
-        Platform.NETEASE -> setOf("music.163.com", "st.music.163.com", "reg.163.com", "dl.reg.163.com", "passport.163.com")
-        Platform.TIEBA -> setOf("tieba.baidu.com", "wappass.baidu.com", "passport.baidu.com", "wappass.bdimg.com")
-        Platform.SKLAND -> setOf("www.skland.com", "web-api.skland.com", "user.hypergryph.com", "as.hypergryph.com")
-        Platform.BILIBILI -> setOf("passport.bilibili.com", "www.bilibili.com", "m.bilibili.com", "big.bilibili.com", "api.bilibili.com")
-    }
+    private var lastAutoFingerprint = ""
+    private var lastSdkProbeAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         platform = Platform.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_PLATFORM) }
             ?: run { finish(); return }
         setResult(RESULT_CANCELED)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        val root = buildNativeLayout()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { closeSession(null) }
         })
-        setContent {
-            MaterialTheme {
-                Surface(Modifier.fillMaxSize()) {
-                    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-                            TextButton(onClick = { closeSession(null) }, enabled = !closing) { Text("返回") }
-                            Text("${platform.title} · 官方网页登录", Modifier.padding(12.dp), style = MaterialTheme.typography.titleMedium)
-                        }
-                        Text("登录与验证码由官方网页处理。只导入本次登录，不读取手机其他 App。", Modifier.padding(horizontal = 14.dp), style = MaterialTheme.typography.bodySmall)
-                        if (host.isNotBlank()) Text("官方域名：$host", Modifier.padding(horizontal = 14.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
-                        Text(status, Modifier.padding(horizontal = 14.dp, vertical = 6.dp), style = MaterialTheme.typography.bodySmall)
-                        if (loading || checking || closing) LinearProgressIndicator(Modifier.fillMaxWidth())
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-                            TextButton(onClick = { detect(manual = true) }, enabled = page != null && !checking && !closing) { Text("登录完成，检测账号") }
-                            TextButton(onClick = { returnToLogin() }, enabled = page != null && !checking && !closing) { Text("返回官网登录") }
-                        }
-                        val browser = page
-                        if (browser != null && !hidePage) AndroidView(factory = { browser }, modifier = Modifier.fillMaxWidth().weight(1f))
-                        else Box(Modifier.fillMaxWidth().weight(1f).padding(24.dp)) { Text(if (hidePage) "正在读取本次登录授权并校验身份，请稍候…" else "正在准备独立登录会话…") }
-                    }
-                }
-            }
+        // Render the fixed native header before initializing the device's WebView provider.
+        root.doOnPreDraw { root.post { if (!closing && !isDestroyed) beginFreshSession() } }
+        lifecycleScope.launch { while (!closing) { delay(3_000); detect(manual = false) } }
+    }
+
+    private fun buildNativeLayout(): LinearLayout {
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.WHITE) }
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(safe.left, safe.top, safe.right, max(safe.bottom, keyboard.bottom))
+            insets
         }
-        WebView.setWebContentsDebuggingEnabled(false)
-        WebStorage.getInstance().deleteAllData()
-        CookieManager.getInstance().removeAllCookies {
-            if (!isFinishing && !isDestroyed && !closing) {
-                createBrowser()
-                lifecycleScope.launch {
-                    while (!closing) { delay(2_000); detect(manual = false) }
+        val toolbar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        backButton = Button(this).apply { text = "返回"; tag = BACK_TAG; setOnClickListener { closeSession(null) } }
+        toolbar.addView(backButton, LinearLayout.LayoutParams(dp(76), dp(52)))
+        toolbar.addView(label("${platform.title} · 官方网页登录", 17f).apply { tag = TITLE_TAG }, LinearLayout.LayoutParams(0, dp(52), 1f))
+        root.addView(toolbar)
+        root.addView(label("登录和验证码由官网处理。只导入本次登录，不读取其他 App 数据。", 12f))
+        domainText = label("准备独立登录会话", 12f); root.addView(domainText)
+        statusText = label("正在清理上次登录会话…", 13f).apply { tag = STATUS_TAG; minLines = 2; maxLines = 4; setTextColor(Color.rgb(0, 86, 78)) }
+        root.addView(statusText)
+        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true }
+        root.addView(progressBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)))
+        val actions = LinearLayout(this)
+        detectButton = Button(this).apply { text = "登录完成，检测账号"; textSize = 12f; setOnClickListener { detect(manual = true) } }
+        retryButton = Button(this).apply { text = "重新加载官网"; tag = RETRY_TAG; textSize = 12f; setOnClickListener { retryLogin() } }
+        actions.addView(detectButton, LinearLayout.LayoutParams(0, dp(52), 1.2f))
+        actions.addView(retryButton, LinearLayout.LayoutParams(0, dp(52), 1f)); root.addView(actions)
+        browserContainer = FrameLayout(this).apply { setBackgroundColor(Color.rgb(248, 249, 249)) }
+        placeholder = label("正在准备独立登录会话…", 15f).apply { gravity = Gravity.CENTER }
+        browserContainer.addView(placeholder, FrameLayout.LayoutParams(-1, -1))
+        root.addView(browserContainer, LinearLayout.LayoutParams(-1, 0, 1f))
+        setContentView(root); ViewCompat.requestApplyInsets(root); updateControls()
+        return root
+    }
+
+    private fun label(value: String, size: Float) = TextView(this).apply {
+        text = value; textSize = size; setTextColor(Color.rgb(28, 33, 33)); setPadding(dp(12), dp(5), dp(12), dp(5))
+        importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+    }
+    private fun dp(value: Int) = (value * resources.displayMetrics.density + .5f).toInt()
+    private fun showStatus(message: String) { statusText.text = message; updateControls() }
+    private fun updateControls() {
+        progressBar.visibility = if (preparing || loading || checking || closing) View.VISIBLE else View.INVISIBLE
+        detectButton.isEnabled = page != null && !preparing && !checking && !closing && !hidePage
+        retryButton.isEnabled = !preparing && !checking && !closing
+        backButton.isEnabled = !closing
+    }
+
+    private fun beginFreshSession() {
+        if (closing) return
+        val generation = ++sessionGeneration
+        preparing = true; checking = false; loading = false; hidePage = false; cleaned = false
+        disposeBrowser(); placeholder.text = "正在准备独立登录会话…"; placeholder.visibility = View.VISIBLE
+        showStatus("正在清理上次登录会话…")
+        sessionTimeout?.cancel()
+        sessionTimeout = lifecycleScope.launch {
+            try {
+                WebView.setWebContentsDebuggingEnabled(false)
+                WebStorage.getInstance().deleteAllData()
+                withTimeout(10_000) { WebLoginCookieClear.awaitClear() }
+                if (generation != sessionGeneration || isFinishing || isDestroyed || closing) return@launch
+                preparing = false; createBrowser()
+            } catch (_: TimeoutCancellationException) {
+                if (generation == sessionGeneration && !closing) {
+                    preparing = false
+                    showStatus("系统仍在清理旧登录会话，尚未打开官网。请稍后重新加载；新账号会等待旧会话清理完成。")
+                    placeholder.text = "旧会话清理尚未完成，上方返回和重试按钮仍可使用。"
                 }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                preparing = false
+                showStatus("无法启动网页组件。请安装或更新 Android System WebView / Chrome 后重试。")
+                placeholder.text = "系统网页组件未能启动。"
             }
         }
     }
@@ -118,88 +165,156 @@ class WebLoginActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     @Suppress("DEPRECATION")
     private fun createBrowser() {
-        val browser = WebView(this)
-        browser.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            allowFileAccess = false
-            allowContentAccess = false
-            allowFileAccessFromFileURLs = false
-            allowUniversalAccessFromFileURLs = false
-            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            cacheMode = WebSettings.LOAD_NO_CACHE
-            setSavePassword(false)
-            saveFormData = false
-            javaScriptCanOpenWindowsAutomatically = false
-            setSupportMultipleWindows(false)
-        }
-        CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(browser, false)
-        browser.webChromeClient = object : WebChromeClient() {
-            override fun onProgressChanged(view: WebView?, progress: Int) { loading = progress < 100 }
-        }
-        browser.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val allowed = if (request.isForMainFrame) allowedNavigation(request.url) else secureUrl(request.url)
-                if (!allowed && request.isForMainFrame) status = "官网请求打开其他地址，已停止跳转。请在此页完成网页登录。"
-                return !allowed
-            }
-            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? =
-                if (if (request.isForMainFrame) allowedNavigation(request.url) else secureUrl(request.url)) null
-                else WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
-
-            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                val uri = url?.let(Uri::parse)
-                if (uri == null || !allowedNavigation(uri)) { view.stopLoading(); status = "已停止非官方页面跳转"; return }
-                host = uri.host.orEmpty()
-                if (isSklandAuthorization(uri)) { hidePage = true; view.visibility = android.view.View.INVISIBLE }
-                loading = true
-            }
-            override fun onPageFinished(view: WebView, url: String?) {
-                // Canceled navigation can deliver an old callback after the token URL is active.
-                if (url == null || url != view.url || closing) return
-                loading = false
-                if (url?.let(Uri::parse)?.let(::isSklandAuthorization) == true) {
-                    if (hidePage && checking) readSklandAuthorization(view)
-                } else if (url?.let(Uri::parse)?.let(::allowedNavigation) == true) {
-                    hidePage = false
-                    view.visibility = android.view.View.VISIBLE
-                    detect(manual = false)
+        try {
+            val browser = WebView(this)
+            page = browser // Ensure partially initialized providers are disposed on failure.
+            browser.settings.apply {
+                javaScriptEnabled = true; domStorageEnabled = true
+                allowFileAccess = false; allowContentAccess = false
+                allowFileAccessFromFileURLs = false; allowUniversalAccessFromFileURLs = false
+                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW; cacheMode = WebSettings.LOAD_NO_CACHE
+                setSavePassword(false); saveFormData = false
+                javaScriptCanOpenWindowsAutomatically = false; setSupportMultipleWindows(false)
+                // Official NetEase home HTML sends Android/Mobile clients toward its app landing
+                // page. Use this provider's desktop-web UA, never an official-app identity.
+                if (platform == Platform.NETEASE) userAgentString = userAgentString
+                    .replace(Regex("\\([^)]*Android[^)]*\\)"), "(X11; Linux x86_64)")
+                    .replace(" Version/4.0", "").replace(" Mobile", "")
+                if (platform == Platform.NETEASE) {
+                    useWideViewPort = true; loadWithOverviewMode = true
+                    builtInZoomControls = true; displayZoomControls = false
                 }
             }
-            override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler, error: SslError?) {
-                handler.cancel()
-                loading = false
-                checking = false
-                status = "官网安全连接验证失败，请检查手机时间和网络后重试"
-            }
-            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                if (request?.isForMainFrame == true) {
-                    loading = false
-                    checking = false
-                    status = "官方页面加载失败，请检查网络后点击返回官网登录"
+            browser.tag = BROWSER_TAG; browser.setBackgroundColor(Color.WHITE); browser.isSaveEnabled = false
+            browser.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            CookieManager.getInstance().setAcceptCookie(true)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(browser, false)
+            browser.webChromeClient = object : WebChromeClient() {
+                override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                    if (view === page && !closing) progressBar.contentDescription = "网页加载进度 $newProgress%"
                 }
             }
+            browser.webViewClient = officialClient(); page = browser
+            browserContainer.addView(browser, 0, FrameLayout.LayoutParams(-1, -1))
+            placeholder.visibility = View.GONE; loadLoginPage()
+        } catch (_: Exception) {
+            disposeBrowser(); loading = false
+            showStatus("系统网页组件启动失败，请更新 Android System WebView / Chrome 后重试。")
+            placeholder.visibility = View.VISIBLE; placeholder.text = "网页暂时不可用，上方按钮仍可操作。"
         }
-        page = browser
-        status = "请在下方官网完成登录；检测到授权后会自动校验账号。"
-        browser.loadUrl(startUrl)
     }
 
-    private fun secureUrl(uri: Uri): Boolean = uri.scheme == "https" && uri.host != null &&
-        (uri.port == -1 || uri.port == 443) && !uri.encodedAuthority.orEmpty().contains('@')
+    private fun officialClient() = object : WebViewClient() {
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            val allowed = if (request.isForMainFrame) allowedNavigation(request.url) else OfficialLoginPolicy.allowedSubframe(request.url.toString())
+            if (!allowed && request.isForMainFrame) failPage("官网尝试跳转到非 HTTPS 或未经核实的地址，已阻止。请使用网页内其他登录方式。", stop = false)
+            return !allowed
+        }
+        override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? =
+            if (if (request.isForMainFrame) allowedNavigation(request.url) else OfficialLoginPolicy.allowedSubframe(request.url.toString())) null
+            else WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
 
-    private fun allowedNavigation(uri: Uri): Boolean = secureUrl(uri) && uri.host in navigationHosts
+        override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+            if (view !== page || closing) return
+            val uri = url?.let(Uri::parse)
+            if (uri == null || !allowedNavigation(uri)) { failPage("已停止未经核实的页面跳转，请重新加载官网。"); return }
+            domainText.text = "官方域名：${uri.host.orEmpty()}" + if (platform == Platform.NETEASE) " · 电脑网页" else ""
+            if (isSklandAuthorization(uri)) concealPage("正在读取本次登录授权并校验身份…")
+            loading = true; failedNavigation = false; armPageTimeout(); updateControls()
+        }
+        override fun onPageCommitVisible(view: WebView, url: String?) {
+            if (view !== page || closing || url == null || url != view.url) return
+            val uri = Uri.parse(url)
+            if (allowedNavigation(uri) && !isSklandAuthorization(uri) && !checking) revealPage()
+        }
+        override fun onPageFinished(view: WebView, url: String?) {
+            if (view !== page || url == null || url != view.url || closing || failedNavigation) return
+            pageTimeout?.cancel(); loading = false
+            val uri = Uri.parse(url)
+            if (isSklandAuthorization(uri)) {
+                if (hidePage && checking) readSklandAuthorization(view)
+            } else if (allowedNavigation(uri)) {
+                if (!checking) {
+                    revealPage()
+                    showStatus("请在官网完成登录。登录后自动校验，也可点击“登录完成，检测账号”。")
+                    detect(manual = false); inspectEmptyPage(view, navigationGeneration)
+                }
+            }
+            updateControls()
+        }
+        override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler, error: SslError?) {
+            handler.cancel()
+            if (view === page) failPage("官网安全连接验证失败。请检查手机日期、网络和系统 WebView 后重试。")
+        }
+        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+            if (view === page && request?.isForMainFrame == true) {
+                val reason = when (error?.errorCode) {
+                    ERROR_HOST_LOOKUP -> "无法解析官网域名"
+                    ERROR_CONNECT -> "无法连接官网"
+                    ERROR_TIMEOUT -> "官网连接超时"
+                    ERROR_FAILED_SSL_HANDSHAKE -> "官网安全连接失败"
+                    else -> "官网页面加载失败"
+                }
+                failPage("$reason。请检查网络后重新加载官网。")
+            }
+        }
+        override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
+            if (view === page && request?.isForMainFrame == true) {
+                val code = errorResponse?.statusCode?.takeIf { it in 400..599 }
+                failPage("官网返回 HTTP ${code ?: "错误"}，未完成登录。请稍后重新加载。")
+            }
+        }
+        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail?): Boolean {
+            if (view === page) {
+                pageTimeout?.cancel(); checking = false; loading = false; validationJob?.cancel(); sklandProbeJob?.cancel()
+                disposeBrowser(rendererGone = true); placeholder.visibility = View.VISIBLE
+                placeholder.text = "网页渲染进程已退出，可以重新加载官网恢复。"
+                showStatus("系统 WebView 渲染进程退出。请重新加载；若重复出现，请更新 WebView / Chrome。")
+            } else { (view.parent as? ViewGroup)?.removeView(view); view.destroy() }
+            return true
+        }
+    }
 
-    private fun isSklandAuthorization(uri: Uri): Boolean = platform == Platform.SKLAND &&
-        uri.host == "web-api.skland.com" && uri.path == "/account/info/hg"
+    private fun allowedNavigation(uri: Uri) = OfficialLoginPolicy.allowed(platform, uri.toString())
+    private fun isSklandAuthorization(uri: Uri) = platform == Platform.SKLAND && OfficialLoginPolicy.isSklandSensitivePage(uri.toString())
+    private fun armPageTimeout() {
+        pageTimeout?.cancel(); val navigation = ++navigationGeneration
+        pageTimeout = lifecycleScope.launch {
+            delay(25_000)
+            if (navigation == navigationGeneration && !closing && loading) failPage("官网加载超过 25 秒，结果未确认。请检查网络后重试；不会把白屏当作登录成功。")
+        }
+    }
+    private fun inspectEmptyPage(browser: WebView, navigation: Int) {
+        lifecycleScope.launch {
+            delay(3_000)
+            if (page !== browser || navigation != navigationGeneration || checking || closing || hidePage) return@launch
+            // Only an empty/non-empty flag leaves this page, never its HTML or form values.
+            browser.evaluateJavascript("(function(){var b=document.body;return !!b && ((b.innerText||'').trim().length>0 || !!b.querySelector('input,button,img,svg,canvas,iframe'));})()") { value ->
+                if (page === browser && navigation == navigationGeneration && !checking && !closing && value == "false") showStatus("官网未显示可操作内容。可重新加载；若仍空白，请使用账号页手动导入备用方式。")
+            }
+        }
+    }
+    private fun failPage(message: String, stop: Boolean = true) {
+        pageTimeout?.cancel(); navigationGeneration++; failedNavigation = true; loading = false; checking = false
+        if (stop) page?.stopLoading()
+        if (hidePage) { placeholder.visibility = View.VISIBLE; placeholder.text = "授权内容保持隐藏，可重新加载官网返回登录。" }
+        showStatus(message)
+    }
+    private fun concealPage(message: String) {
+        hidePage = true; page?.visibility = View.INVISIBLE; placeholder.visibility = View.VISIBLE; placeholder.text = message
+    }
+    private fun revealPage() {
+        // Hide the token endpoint even if it unexpectedly adds query/fragment/encoded path text.
+        if (platform == Platform.SKLAND && OfficialLoginPolicy.isSklandSensitivePage(page?.url.orEmpty())) return
+        hidePage = false; page?.visibility = View.VISIBLE; placeholder.visibility = View.GONE
+    }
 
     private fun cookieCredential(): String? {
         val urls = when (platform) {
             Platform.NETEASE -> listOf("https://music.163.com/")
             Platform.TIEBA -> listOf("https://tieba.baidu.com/")
             Platform.BILIBILI -> listOf("https://api.bilibili.com/", "https://www.bilibili.com/")
-            Platform.SKLAND -> listOf("https://www.skland.com/")
+            Platform.SKLAND -> listOf("https://www.skland.com/", "https://m.skland.com/")
         }
         val allowed = when (platform) {
             Platform.NETEASE -> setOf("MUSIC_U", "__csrf")
@@ -220,110 +335,179 @@ class WebLoginActivity : ComponentActivity() {
         }
         return if (required.all { it in cookies }) cookies.entries.joinToString("; ") { "${it.key}=${it.value}" } else null
     }
-
     private fun detect(manual: Boolean) {
         val browser = page ?: return
-        if (closing || checking || hidePage || (!manual && autoChecks >= 3)) return
+        if (preparing || closing || checking || hidePage || loading || failedNavigation || (!manual && autoChecks >= 3)) return
+        if (platform == Platform.SKLAND && OfficialLoginPolicy.isHypergryphAccount(browser.url.orEmpty())) {
+            // The current official portal routes a completed, agreed login to /userInfo. Do not
+            // hide a user's SMS form every three seconds while /login is still being completed.
+            if (!manual && Uri.parse(browser.url).path != "/userInfo") return
+            if (!manual && SystemClock.elapsedRealtime() - lastSdkProbeAt < 15_000) return
+            lastSdkProbeAt = SystemClock.elapsedRealtime()
+            probeSklandSdk(browser, manual); return
+        }
         val credential = cookieCredential()
-        if (!manual && (credential == null || credential == lastAutoCredential)) return
-        if (credential != null && !manual) { autoChecks++; lastAutoCredential = credential }
+        if (!manual && (credential == null || !newAutoCredential(credential))) return
         if (platform == Platform.SKLAND) {
-            checking = true
-            hidePage = true // The official JSON contains a token, so it must never be displayed.
-            browser.visibility = android.view.View.INVISIBLE
-            status = "正在读取本次登录授权…"
+            checking = true; concealPage("正在读取本次登录授权并校验身份…"); showStatus("正在读取本次登录授权…")
             browser.loadUrl(SK_TOKEN_URL)
         } else if (credential != null) validateCredential(credential)
-        else if (manual) status = "尚未检测到完整登录授权，请先完成官方登录和验证码，再检测账号。"
+        else if (manual) showStatus("尚未检测到完整登录授权。请完成官方登录和验证码后再检测账号。")
+    }
+    private fun newAutoCredential(credential: String): Boolean {
+        val fingerprint = MessageDigest.getInstance("SHA-256").digest(credential.toByteArray()).joinToString("") { "%02x".format(it) }
+        if (fingerprint == lastAutoFingerprint) return false
+        lastAutoFingerprint = fingerprint; autoChecks++; return true
     }
 
-    private fun readSklandAuthorization(browser: WebView) {
-        if (browser.url?.let(Uri::parse)?.let(::isSklandAuthorization) != true || closing) return
-        browser.evaluateJavascript("(function(){return document.body ? document.body.innerText : '';})()") { value ->
-            if (closing || isDestroyed) return@evaluateJavascript
-            val credential = try {
-                val text = JSONTokener(value).nextValue() as? String
-                val token = text?.let(::JSONObject)?.optJSONObject("data")?.opt("content") as? String
-                token?.takeIf { it.isNotBlank() && it.length <= 4096 && it.none(Char::isWhitespace) }
-            } catch (_: Exception) { null }
-            if (credential == null) {
-                checking = false
-                status = "未取得已登录授权，请返回官网完成登录或手动验证后重试。"
-                // Keep the token endpoint hidden even when the page or response is unexpected.
-            } else validateCredential(credential)
-        }
-    }
-
-    private fun validateCredential(credential: String) {
+    /** Official user-center index.62f8883d.js uses HG_SDK.User.getToken(), result and data.token. */
+    private fun probeSklandSdk(browser: WebView, manual: Boolean) {
+        if (sklandProbeJob?.isActive == true || !OfficialLoginPolicy.isHypergryphAccount(browser.url.orEmpty())) return
+        val key = "__oneTapLogin_" + UUID.randomUUID().toString().replace("-", "")
+        val quoted = JSONObject.quote(key)
+        val script = """(function(){var s=window.HG_SDK;if(!s||!s.User||typeof s.User.getToken!=='function')return 'not-ready';var b={state:'pending'};window[$quoted]=b;try{Promise.resolve(s.User.getToken()).then(function(r){if(r&&r.result===true&&r.data&&typeof r.data.token==='string'){b.state='ok';b.token=r.data.token;}else b.state='not-logged-in';}).catch(function(){b.state='error';});}catch(e){b.state='error';}return 'started';})()"""
         checking = true
-        status = "正在向官方平台校验账号身份…"
-        lifecycleScope.launch {
+        concealPage("正在通过官方账号组件读取本次登录授权…")
+        showStatus("正在通过官方账号组件读取本次登录授权…")
+        sklandProbeJob = lifecycleScope.launch {
+            var validating = false
             try {
-                val adapter = (application as CheckInApp).adapters.getValue(platform)
-                val identity = withContext(Dispatchers.IO) { adapter.validate(credential) }
-                if (!closing && !isDestroyed) {
-                    status = "已确认账号：${identity.displayName} · ID ${identity.userId}"
-                    closeSession(credential)
-                }
-            } catch (e: CancellationException) { throw e }
-            catch (e: Exception) {
-                if (!closing) {
-                    checking = false
-                    status = when ((e as? AdapterException)?.status) {
-                        TaskStatus.EXPIRED -> "网页登录授权未生效或已过期，请完成官方登录后重试。"
-                        TaskStatus.MANUAL -> "平台要求手动验证，请在官网完成验证码或安全检查后重试。"
-                        else -> "官方身份校验未通过，请检查网络并完成网页登录后重试。"
+                val result = withTimeout(12_000) {
+                    if (evaluate(browser, script) != "\"started\"") return@withTimeout JSONObject().put("state", "not-ready")
+                    repeat(40) {
+                        delay(250)
+                        if (closing || page !== browser || !OfficialLoginPolicy.isHypergryphAccount(browser.url.orEmpty())) return@withTimeout JSONObject().put("state", "navigated")
+                        val value = evaluate(browser, "JSON.stringify(window[$quoted]||{state:'missing'})")
+                        val outcome = try { JSONObject(JSONTokener(value).nextValue() as? String ?: "{}") } catch (_: Exception) { JSONObject() }
+                        if (outcome.optString("state") != "pending") return@withTimeout outcome
                     }
+                    JSONObject().put("state", "timeout")
                 }
+                val token = (result.opt("token") as? String)?.takeIf { result.optString("state") == "ok" && validToken(it) }
+                if (token != null) {
+                    if (manual || newAutoCredential(token)) { validating = true; validateCredential(token) }
+                    else showStatus("此登录授权已检测过。若已完成重新登录，请点击“登录完成，检测账号”。")
+                } else showStatus(when (result.optString("state")) {
+                    "not-ready" -> "官方账号组件尚未加载完成。请等待页面显示后再检测账号。"
+                    "timeout" -> "官方授权检测超时，请检查网络后重试。"
+                    "navigated" -> "官网页面已跳转，尚未取得授权。请在当前官方页面完成登录后重试。"
+                    else -> "尚未取得官方账号登录授权。请先完成短信登录或安全验证后再检测。"
+                })
+            } catch (_: TimeoutCancellationException) {
+                if (!closing) showStatus("官方授权检测超时，尚未保存账号。请检查网络后重新检测。")
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                if (!closing) showStatus("官方账号组件暂时无法读取授权，请重新加载官网后重试。")
+            } finally {
+                if (!closing && page === browser && OfficialLoginPolicy.isHypergryphAccount(browser.url.orEmpty())) {
+                    try { browser.evaluateJavascript("(function(){delete window[$quoted];return true;})()", null) } catch (_: Exception) { }
+                }
+                if (!validating && !closing && page === browser) { checking = false; revealPage(); updateControls() }
             }
         }
     }
-
-    private fun returnToLogin() {
-        if (closing || checking) return
-        status = "请在官方网页完成登录；若页面要求打开其他 App，可尝试网页提供的其他登录方式。"
-        // If the current page is the token response, keep it hidden until a safe page finishes.
-        page?.loadUrl(startUrl)
+    private suspend fun evaluate(browser: WebView, script: String): String = withTimeout(3_000) {
+        suspendCancellableCoroutine { continuation ->
+            browser.evaluateJavascript(script) { if (continuation.isActive) continuation.resume(it ?: "null") }
+        }
     }
-
+    private fun validToken(value: String) = value.isNotBlank() && value.length <= 4096 && value.none(Char::isWhitespace)
+    private fun readSklandAuthorization(browser: WebView) {
+        if (closing) return
+        if (!OfficialLoginPolicy.isSklandToken(browser.url.orEmpty())) {
+            checking = false
+            showStatus("官方授权页面地址发生变化，已保持隐藏。请重新加载官网，不会自动导入未知响应。")
+            return
+        }
+        sklandProbeJob = lifecycleScope.launch {
+            try {
+                val value = evaluate(browser, "(function(){return document.body ? document.body.innerText : '';})()")
+                if (closing || isDestroyed || page !== browser) return@launch
+                val credential = try {
+                    val text = JSONTokener(value).nextValue() as? String
+                    (text?.let(::JSONObject)?.optJSONObject("data")?.opt("content") as? String)?.takeIf(::validToken)
+                } catch (_: Exception) { null }
+                if (credential == null) { checking = false; showStatus("未取得已登录授权。请重新加载官网完成登录后重试。") }
+                else validateCredential(credential)
+            } catch (_: TimeoutCancellationException) {
+                if (!closing) { checking = false; showStatus("官方授权读取超时，尚未保存账号。请重新加载官网后重试。") }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { if (!closing) { checking = false; showStatus("未能读取官方授权，请重新加载官网后重试。") } }
+        }
+    }
+    private fun validateCredential(credential: String) {
+        checking = true; concealPage("正在向官方平台校验账号身份…"); showStatus("正在向官方平台校验账号身份…")
+        validationJob = lifecycleScope.launch {
+            try {
+                val adapter = (application as CheckInApp).adapters.getValue(platform)
+                val identity = withTimeout(45_000) { runInterruptible(Dispatchers.IO) { adapter.validate(credential) } }
+                if (!closing && !isDestroyed) { showStatus("已确认账号：${identity.displayName} · ID ${identity.userId}"); closeSession(credential) }
+            } catch (_: TimeoutCancellationException) {
+                if (!closing) validationFailed("官方身份校验超时，尚未保存账号。请检查网络后重试。")
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                if (!closing) validationFailed(when ((e as? AdapterException)?.status) {
+                    TaskStatus.EXPIRED -> "网页登录授权未生效或已过期，请完成官方登录后重试。"
+                    TaskStatus.MANUAL -> "平台要求手动验证，请在官网完成验证码或安全检查后重试。"
+                    else -> "官方身份校验未通过，请检查网络并完成网页登录后重试。"
+                })
+            }
+        }
+    }
+    private fun validationFailed(message: String) {
+        checking = false
+        if (page?.url?.let(Uri::parse)?.let(::isSklandAuthorization) != true) revealPage()
+        showStatus(message)
+    }
+    private fun retryLogin() {
+        if (preparing || closing || checking) return
+        if (page == null) beginFreshSession() else loadLoginPage()
+    }
+    private fun loadLoginPage() {
+        val browser = page ?: return
+        pageTimeout?.cancel(); sklandProbeJob?.cancel(); browser.stopLoading()
+        checking = false; loading = true; failedNavigation = false; autoChecks = 0; lastAutoFingerprint = ""
+        concealPage("正在加载官方登录页…"); showStatus("正在加载官网，请稍候。加载异常会在上方显示原因。")
+        armPageTimeout(); browser.loadUrl(OfficialLoginPolicy.startUrl(platform))
+    }
     private fun closeSession(credential: String?) {
         if (closing) return
-        closing = true
-        checking = false
-        status = "正在清理网页登录会话…"
-        disposeBrowser()
-        WebStorage.getInstance().deleteAllData()
-        CookieManager.getInstance().removeAllCookies {
-            cleaned = true
-            if (!isDestroyed) {
-                if (credential != null) {
-                    val ticket = LoginResultBroker.put(platform, credential)
-                    setResult(RESULT_OK, Intent().putExtra(EXTRA_TICKET, ticket))
-                }
+        closing = true; val generation = ++sessionGeneration
+        pageTimeout?.cancel(); sessionTimeout?.cancel(); sklandProbeJob?.cancel()
+        checking = false; preparing = false; loading = false
+        showStatus("正在清理网页登录会话…"); disposeBrowser()
+        placeholder.visibility = View.VISIBLE; placeholder.text = "正在清理本次网页登录会话…"
+        sessionTimeout = lifecycleScope.launch {
+            try {
+                WebStorage.getInstance().deleteAllData()
+                withTimeout(10_000) { WebLoginCookieClear.awaitClear() }
+                if (generation != sessionGeneration || isDestroyed) return@launch
+                cleaned = true
+                if (credential != null) setResult(RESULT_OK, Intent().putExtra(EXTRA_TICKET, LoginResultBroker.put(platform, credential)))
+                finish()
+            } catch (_: TimeoutCancellationException) {
+                Toast.makeText(this@WebLoginActivity, "网页会话清理超时，账号未保存，请重新登录。", Toast.LENGTH_LONG).show()
+                finish()
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                Toast.makeText(this@WebLoginActivity, "网页会话清理失败，账号未保存，请重新登录。", Toast.LENGTH_LONG).show()
                 finish()
             }
         }
     }
-
-    private fun disposeBrowser() {
-        val browser = page
-        page = null
+    private fun disposeBrowser(rendererGone: Boolean = false) {
+        val browser = page; page = null
         browser?.let {
-            it.stopLoading()
-            it.clearCache(true)
-            it.clearHistory()
-            it.clearFormData()
-            (it.parent as? android.view.ViewGroup)?.removeView(it)
-            it.removeAllViews()
-            it.destroy()
+            // A renderer-gone WebView cannot be reused; remove and destroy it without page calls.
+            if (!rendererGone) try { it.stopLoading(); it.clearCache(true); it.clearHistory(); it.clearFormData() } catch (_: Exception) { }
+            (it.parent as? ViewGroup)?.removeView(it)
+            try { it.removeAllViews(); it.destroy() } catch (_: Exception) { }
         }
     }
-
     override fun onDestroy() {
-        disposeBrowser()
-        // Normal return/success cleared cookies before finish. On unexpected recreation the next
-        // onCreate clears before loading any site; do not race a new Activity with a late clear.
-        if (!cleaned) WebStorage.getInstance().deleteAllData()
+        pageTimeout?.cancel(); sessionTimeout?.cancel(); sklandProbeJob?.cancel(); disposeBrowser()
+        // Do not race a new Activity with a late asynchronous cookie clear after recreation.
+        if (!cleaned) try { WebStorage.getInstance().deleteAllData() } catch (_: Exception) { }
         super.onDestroy()
     }
 }

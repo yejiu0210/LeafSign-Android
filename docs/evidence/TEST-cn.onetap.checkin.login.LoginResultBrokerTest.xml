@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.login.LoginResultBrokerTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-17T07:12:13.402Z" hostname="PC-20260405TBKV" time="0.007">
+<testsuite name="cn.onetap.checkin.login.LoginResultBrokerTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-17T07:38:55.287Z" hostname="PC-20260405TBKV" time="0.009">
   <properties/>
-  <testcase name="wrongPlatformCannotClaimOrReuseTicket" classname="cn.onetap.checkin.login.LoginResultBrokerTest" time="0.003"/>
-  <testcase name="newestResultReplacesOldAccountAndUnknownTicketDoesNotConsumeIt" classname="cn.onetap.checkin.login.LoginResultBrokerTest" time="0.0"/>
-  <testcase name="credentialIsOneUseAndTicketContainsNoCredential" classname="cn.onetap.checkin.login.LoginResultBrokerTest" time="0.001"/>
+  <testcase name="wrongPlatformCannotClaimOrReuseTicket" classname="cn.onetap.checkin.login.LoginResultBrokerTest" time="0.004"/>
+  <testcase name="newestResultReplacesOldAccountAndUnknownTicketDoesNotConsumeIt" classname="cn.onetap.checkin.login.LoginResultBrokerTest" time="0.001"/>
+  <testcase name="credentialIsOneUseAndTicketContainsNoCredential" classname="cn.onetap.checkin.login.LoginResultBrokerTest" time="0.002"/>
   <testcase name="ticketExpiresAtTwoMinutes" classname="cn.onetap.checkin.login.LoginResultBrokerTest" time="0.001"/>
-  <testcase name="clockMovingBackwardsInvalidatesTicket" classname="cn.onetap.checkin.login.LoginResultBrokerTest" time="0.0"/>
+  <testcase name="clockMovingBackwardsInvalidatesTicket" classname="cn.onetap.checkin.login.LoginResultBrokerTest" time="0.001"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.platform.SklandAdapterTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-17T07:12:13.513Z" hostname="PC-20260405TBKV" time="0.061">
+<testsuite name="cn.onetap.checkin.platform.SklandAdapterTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-17T07:38:55.659Z" hostname="PC-20260405TBKV" time="0.032">
   <properties/>
   <testcase name="noBindingsAreUnboundWhileMalformedBindingsAreUnknown" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.007"/>
-  <testcase name="gameRewardSchemasAreSeparateAndMissingFieldsNeverSucceed" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.009"/>
-  <testcase name="errorDiagnosticsNeverEchoUntrustedMessagesOrCredentialFields" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.0"/>
+  <testcase name="gameRewardSchemasAreSeparateAndMissingFieldsNeverSucceed" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.01"/>
+  <testcase name="errorDiagnosticsNeverEchoUntrustedMessagesOrCredentialFields" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.001"/>
   <testcase name="explicitDuplicateIsRequiredForAlreadySigned" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.001"/>
-  <testcase name="twoAccountsKeepDistinctOwnersAndAllRoleServerSelections" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.007"/>
-  <testcase name="arkNoAvailableCalendarNeedsActualTodayRecord" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.001"/>
-  <testcase name="fixedSignaturesMatchIndependentDotNetVectors" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.034"/>
-  <testcase name="endfieldStateRequiresActualBoolean" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.0"/>
+  <testcase name="twoAccountsKeepDistinctOwnersAndAllRoleServerSelections" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.003"/>
+  <testcase name="arkNoAvailableCalendarNeedsActualTodayRecord" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.0"/>
+  <testcase name="fixedSignaturesMatchIndependentDotNetVectors" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.008"/>
+  <testcase name="endfieldStateRequiresActualBoolean" classname="cn.onetap.checkin.platform.SklandAdapterTest" time="0.001"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

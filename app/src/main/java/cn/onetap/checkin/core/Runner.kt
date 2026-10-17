@@ -12,7 +12,7 @@ import java.io.IOException
 class Runner(private val store: StateStore, private val adapters: Map<Platform,PlatformAdapter>) {
     companion object { val mutex = Mutex() }
     fun recover() {
-        if (mutex.tryLock()) try { store.update { s -> s.copy(records=s.records.map { if(it.status==TaskStatus.RUNNING) it.copy(status=TaskStatus.INTERRUPTED,message="上次进程中断，请查询或重试确认") else it }) } } finally { mutex.unlock() }
+        if (mutex.tryLock()) try { store.update { old -> val s=Rules.retireOrdinaryMusicTask(old);s.copy(records=s.records.map { if(it.status==TaskStatus.RUNNING) it.copy(status=TaskStatus.INTERRUPTED,message="上次进程中断，请查询或重试确认") else it }) } } finally { mutex.unlock() }
     }
     suspend fun run(onlyFailed: Boolean = false, progress: (String) -> Unit = {}): Int {
         if (!mutex.tryLock()) return 0

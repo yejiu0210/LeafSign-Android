@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="cn.onetap.checkin.login.OfficialLoginPolicyTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-17T07:38:55.300Z" hostname="PC-20260405TBKV" time="0.009">
+  <properties/>
+  <testcase name="mainFrameRejectsOtherPlatformAndLookalikeDomains" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.003"/>
+  <testcase name="tokenBodyIsReadOnlyFromExactOfficialEndpoint" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.001"/>
+  <testcase name="officialStartPagesAndMobileSklandAreAllowed" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.001"/>
+  <testcase name="onlySubframesMayInitializeWithExactAboutBlank" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.001"/>
+  <testcase name="sdkIsInvokedOnlyInsideOfficialHypergryphAccountPage" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.001"/>
+  <testcase name="transportRejectsCleartextCustomSchemesPortsAndCredentials" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

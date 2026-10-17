@@ -1,6 +1,6 @@
 {
   "errors": 0,
-  "warnings": 13,
+  "warnings": 18,
   "issues": [
     {
       "id": "AndroidGradlePluginVersion",
@@ -58,6 +58,11 @@
       "message": "A newer version of org.json:json than 20240303 is available: 20260814"
     },
     {
+      "id": "GetInstance",
+      "severity": "Warning",
+      "message": "ECB encryption mode should not be used (was \"AES/ECB/PKCS5Padding\")"
+    },
+    {
       "id": "UseKtx",
       "severity": "Warning",
       "message": "Use the KTX extension function `String.toUri` instead?"
@@ -66,6 +71,26 @@
       "id": "UseKtx",
       "severity": "Warning",
       "message": "Use the KTX extension function `String.toUri` instead?"
+    },
+    {
+      "id": "UseKtx",
+      "severity": "Warning",
+      "message": "Use the KTX extension function `String.toUri` instead?"
+    },
+    {
+      "id": "UseKtx",
+      "severity": "Warning",
+      "message": "Use the KTX extension function `String.toUri` instead?"
+    },
+    {
+      "id": "SetTextI18n",
+      "severity": "Warning",
+      "message": "Do not concatenate text displayed with `setText`. Use resource string with placeholders."
+    },
+    {
+      "id": "SetTextI18n",
+      "severity": "Warning",
+      "message": "Do not concatenate text displayed with `setText`. Use resource string with placeholders."
     }
   ]
 }

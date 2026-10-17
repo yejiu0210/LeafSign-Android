@@ -33,6 +33,12 @@ data class Settings(val auto: Boolean = false, val hour: Int = 9, val minute: In
 data class AppState(val accounts: List<Account> = emptyList(), val records: List<Record> = emptyList(), val settings: Settings = Settings())
 
 object Rules {
+    /** Retire the old ordinary sign-in without copying its completion to the member task. */
+    fun retireOrdinaryMusicTask(state: AppState): AppState = state.copy(accounts=state.accounts.map { a ->
+        if(a.platform!=Platform.NETEASE || a.targets.none {it.id=="netease:daily:android"}) a
+        else a.copy(targets=a.targets.filterNot {it.id=="netease:daily:android"},enabled=a.enabled-"netease:daily:android",
+            details="已停用旧普通签到。请点「校验 / 刷新」载入黑胶乐签，再勾选启用。旧记录保留，不计为黑胶乐签完成。")
+    })
     fun period(target: Target, at: Instant = Instant.now()): String {
         val zone = runCatching { ZoneId.of(target.metadata["resetZone"] ?: "Asia/Shanghai") }.getOrDefault(ZoneId.of("Asia/Shanghai"))
         val hour = target.metadata["resetHour"]?.toLongOrNull()?.coerceIn(0, 23) ?: 0L

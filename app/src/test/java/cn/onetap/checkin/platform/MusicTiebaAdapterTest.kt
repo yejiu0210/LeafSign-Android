@@ -9,9 +9,9 @@ import java.util.Base64
 
 /** Isolated synthetic fixtures. No platform traffic, credentials, or real-account verification. */
 class MusicTiebaAdapterTest {
-    @Test fun neteaseBusinessCodesAreExplicit() {
-        assertEquals(TaskStatus.SUCCESS, NeteaseAdapter.parseSignResult(JSONObject("""{"code":200}""")).status)
-        assertEquals(TaskStatus.ALREADY, NeteaseAdapter.parseSignResult(JSONObject("""{"code":-2,"msg":"重复签到"}""")).status)
+    @Test fun neteaseVipWriteCodeAloneNeverProvesMusicSign() {
+        assertEquals(TaskStatus.UNKNOWN, NeteaseAdapter.parseSignResult(JSONObject("""{"code":200}""")).status)
+        assertEquals(TaskStatus.UNKNOWN, NeteaseAdapter.parseSignResult(JSONObject("""{"code":-2,"msg":"重复签到"}""")).status)
         assertEquals(TaskStatus.EXPIRED, NeteaseAdapter.parseSignResult(JSONObject("""{"code":301}""")).status)
     }
 
@@ -67,8 +67,8 @@ class MusicTiebaAdapterTest {
     }
 
     @Test fun weapiProducesAesBlocksAndFixedWidthRsaCiphertext() {
-        val first = NeteaseAdapter.encryptWeapi("""{"type":0,"csrf_token":"synthetic"}""")
-        val second = NeteaseAdapter.encryptWeapi("""{"type":0,"csrf_token":"synthetic"}""")
+        val first = NeteaseAdapter.encryptWeapi("""{"csrf_token":"synthetic"}""")
+        val second = NeteaseAdapter.encryptWeapi("""{"csrf_token":"synthetic"}""")
         assertEquals(setOf("params", "encSecKey"), first.keys)
         val encrypted = Base64.getDecoder().decode(first.getValue("params"))
         assertTrue(encrypted.isNotEmpty())

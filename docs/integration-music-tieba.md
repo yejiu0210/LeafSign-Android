@@ -1,5 +1,7 @@
 # 网易云音乐与百度贴吧接入核查
 
+**0.3.0 变更：用户已明确网易云目标为「黑胶乐签」，当前实现见 [integration-netease-vip.md](integration-netease-vip.md)。本文件中的 ordinary dailyTask 是 0.1.0 / 0.2.0 历史协议记录，已从生产执行路径移除。百度贴吧部分继续适用。**
+
 核查日期：2026-10-17（Asia/Shanghai）。本文件区分协议资料、实现验证与真实账号验证。当前没有获得用户在手机本地完成的登录授权，**没有真实账号签到验证**。正式适配器发送真实 HTTPS 请求，不包含模拟成功分支。
 
 ## 证据与可信范围
@@ -28,7 +30,7 @@
    - [helper/crypto/sign.py](https://github.com/lumina37/aiotieba/blob/master/src/aiotieba/helper/crypto/sign.py)、[盐值常量](https://github.com/lumina37/aiotieba/blob/master/src/aiotieba/helper/crypto/const.py)、[core/http.py](https://github.com/lumina37/aiotieba/blob/master/src/aiotieba/core/http.py)、[const.py](https://github.com/lumina37/aiotieba/blob/master/src/aiotieba/const.py)：请求字段按键排序，拼接原始 `key=value` 后加 `tiebaclient!!!`，UTF-8 MD5；当前参考版本 `22.12.1.0`；官方客户端域名 `tiebac.baidu.com`。
 3. `160002` 的重复签到语义由独立实际实现相互印证：[starudream/sign-task 的 Go API 包](https://pkg.go.dev/github.com/starudream/sign-task/pkg/tieba/api)与 [Alcatraz-Zhang/TiebaSignIn 的客户端源码](https://github.com/Alcatraz-Zhang/TiebaSignIn/blob/feat/keepalive-liskin/tieba_client.py)。仅参考此错误码含义；未复制其旧 HTTP 传输、客户端伪造参数、重试或补签策略。
 
-## 网易云音乐
+## 网易云音乐（历史普通签到，已移除）
 
 **准确业务：** 每日签到，`dailyTask(type=0)`。不是自动播放、音乐合伙人、黑胶任务、云贝兑换或连续签到奖励领取。不开启 type=1 的第二次网页签到。文档中的历史经验值未在真实账号上核实，App 不展示“已到账 N 经验”。
 

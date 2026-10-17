@@ -2,7 +2,9 @@
 
 入口为 `PlatformAdapter.validate / query / execute`，统一执行逻辑在 `core/Runner.kt`。平台实现相互独立；不需要插件框架或后端。
 
-0.2.0 网页登录入口在 `login/WebLoginActivity.kt`，只负责官网会话、白名单提取及身份校验，不执行签到。`LoginResultBroker` 只在内存中交换一次性票据，不能把 Credential 放进 Activity result / Bundle / saved state。修改网站入口或域名时先核实官方页面，保留主框架 HTTPS / host 检查、无 JS bridge、SSL 拒绝及会话清理。森空岛 token 页面及返回官网首帧前必须保持原生 WebView 隐藏。见 `integration-web-login.md`。
+0.3.0 登录入口在 `login/WebLoginActivity.kt`，固定原生控件与WebView分离；`OfficialLoginPolicy` 管精确导航，`WebLoginCookieClear` 的进程栅栏保证超时/Activity取消不会取消底层清理。只负责官网授权和身份校验，不执行签到。`LoginResultBroker` 只传一次性内存票据，不能把 Credential 放进 Activity result / Bundle / saved state。森空岛仅精确官方portal调用其已核对SDK，临时值读取后delete；JS3秒/整体12秒超时，读取与校验期间隐藏网页。保留主框架HTTPS、仅安全about:blank子frame、SSL拒绝和会话清理。见 `integration-web-login.md`。
+
+网易当前目标为黑胶乐签：`netease:vip:music-sign`，协议见 `integration-netease-vip.md`。不复用旧ordinary dailyTask的-2或完成记录；状态查询只能调用minidesk，history/detail属于两步写链路。EAPI固定ECB是服务端协议兼容包络，不能自行改AES模式；仍必须保留TLS和本地AES-GCM。未知明细即使查到今日完成也只显示ALREADY，不宣称本次未知请求成功。
 
 - `validate` 必须取得可辨认的用户 ID，列出实际绑定目标，不能用备注或本地序号当平台身份。凭证更新必须与已有账号 ID 一致。`Target.metadata.ownerUserId` 随目标持久化，角色还应保存准确的游戏、角色和服务器字段。
 - `query` 只能调用已查证的只读接口。`PENDING` 必须明确证明尚可执行；无法判断返回 null 或 UNKNOWN，绝不能把“查询没有找到”直接当未签到。
