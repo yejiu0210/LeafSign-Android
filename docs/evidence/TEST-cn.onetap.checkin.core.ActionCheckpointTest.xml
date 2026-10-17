@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.core.ActionCheckpointTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-17T08:46:24.816Z" hostname="PC-20260405TBKV" time="0.219">
+<testsuite name="cn.onetap.checkin.core.ActionCheckpointTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:08:46.313Z" hostname="PC-20260405TBKV" time="0.259">
   <properties/>
-  <testcase name="unknownHeyboxReasonIsKeptWithoutServerText" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.151"/>
-  <testcase name="optionalWriteTaskIsNotEnabledByDefault" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.04"/>
-  <testcase name="previousVersionsWithoutCheckpointsDecodeAsEmpty" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.015"/>
-  <testcase name="deletingOneAccountRemovesOnlyItsCheckpointAndHistory" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.005"/>
-  <testcase name="sameTaskAndPeriodKeepDistinctAccountContinuation" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.006"/>
+  <testcase name="unknownHeyboxReasonIsKeptWithoutServerText" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.191"/>
+  <testcase name="optionalWriteTaskIsNotEnabledByDefault" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.013"/>
+  <testcase name="onlyFixedPublicTiebaIdentityDiagnosticsSurviveRedaction" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.02"/>
+  <testcase name="previousVersionsWithoutCheckpointsDecodeAsEmpty" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.014"/>
+  <testcase name="deletingOneAccountRemovesOnlyItsCheckpointAndHistory" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.006"/>
+  <testcase name="sameTaskAndPeriodKeepDistinctAccountContinuation" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.008"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

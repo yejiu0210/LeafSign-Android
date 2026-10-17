@@ -30,6 +30,9 @@ internal object OfficialLoginPolicy {
     fun isHeyboxLoginReturn(url: String): Boolean = parse(url)?.let {
         secure(it) && it.host in setOf("xiaoheihe.cn", "www.xiaoheihe.cn") && it.path in setOf("", "/", "/app/bbs/home", "/app/bbs/home/")
     } == true
+    fun canReadHeyboxSession(url: String): Boolean = parse(url)?.let {
+        secure(it) && it.host in setOf("login.xiaoheihe.cn", "xiaoheihe.cn", "www.xiaoheihe.cn")
+    } == true
     fun isSklandSensitivePage(url: String): Boolean = parse(url)?.let {
         secure(it) && it.host == "web-api.skland.com" && it.path.trimEnd('/') == "/account/info/hg"
     } == true

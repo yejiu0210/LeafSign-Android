@@ -36,4 +36,14 @@ class ActionCheckpointTest {
         assertEquals("",Rules.safeDiagnostic("heybox synthetic-secret raw response"))
         assertEquals("",Rules.safeDiagnostic("heybox missing task_list synthetic-secret"))
     }
+    @Test fun onlyFixedPublicTiebaIdentityDiagnosticsSurviveRedaction() {
+        listOf("tieba field=thread_id expected=123 actual=124", "tieba field=forum_id expected=456 actual=missing",
+            "tieba field=redundant_fid expected=456 actual=zero", "tieba field=forum_id expected=456 actual=invalid").forEach {
+            assertEquals(it,Rules.safeDiagnostic(it))
+        }
+        listOf("tieba field=owner_uid expected=123 actual=124", "tieba field=forum_id expected=456 actual=private-value",
+            "tieba field=forum_id expected=456 actual=457 synthetic-secret", "synthetic-secret tieba field=forum_id expected=456 actual=457").forEach {
+            assertEquals("",Rules.safeDiagnostic(it))
+        }
+    }
 }

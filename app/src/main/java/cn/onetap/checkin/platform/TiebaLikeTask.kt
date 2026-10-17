@@ -23,10 +23,10 @@ internal class TiebaLikeTask(
     }
     private data class Context(val accountId: String, val target: Target, val period: String)
     private data class Step(val post: TiebaLikeCodec.Post, val stage: String, val likes: Int, val unlikes: Int, val cuid: String,
-        val protocol: String = "obj_type", val repairUsed: Boolean = false) {
+        val protocol: String = "obj_type", val repairUsed: Boolean = false, val candidateRepairUsed: Boolean = false) {
         fun values() = mapOf("threadId" to post.threadId, "forumId" to post.forumId, "forumName" to post.forumName,
             "stage" to stage, "likeAttempts" to likes.toString(), "unlikeAttempts" to unlikes.toString(), "cuid" to cuid,
-            "agreeProtocol" to protocol, "repairUsed" to repairUsed.toString())
+            "agreeProtocol" to protocol, "repairUsed" to repairUsed.toString(), "candidateRepairUsed" to candidateRepairUsed.toString())
     }
     private fun context(owner: String, target: Target): Context {
         val forumId=target.metadata["forumId"].orEmpty();val name=target.metadata["forumName"].orEmpty()
@@ -47,15 +47,16 @@ internal class TiebaLikeTask(
         val stage=value["stage"].orEmpty(); val likes=value["likeAttempts"]?.toIntOrNull(); val unlikes=value["unlikeAttempts"]?.toIntOrNull(); val cuid=value["cuid"].orEmpty()
         val protocol=value["agreeProtocol"] ?: "legacy"
         val repair=when(value["repairUsed"]) { null,"false" -> false; "true" -> true; else -> null }
+        val candidateRepair=when(value["candidateRepairUsed"]) { null,"false" -> false; "true" -> true; else -> null }
         val valid = threadId.toLongOrNull()?.let { it>0 }==true && forumId==context.target.metadata["forumId"] && name.isNotBlank() &&
-            protocol in setOf("legacy","obj_type") && repair!=null && (protocol!="legacy" || !repair) &&
+            protocol in setOf("legacy","obj_type") && repair!=null && candidateRepair!=null && (protocol!="legacy" || !repair) &&
             stage in setOf("selected","unlike_sent","like_sent","complete") && likes!=null && likes in 0..(if(repair==true)3 else 2) &&
             unlikes!=null && unlikes in 0..(if(repair==true)2 else 1) && !(likes==3 && unlikes==2) && TiebaLikeCodec.validCuid(cuid) &&
             (stage!="selected" || (likes==0 && unlikes==0 && repair==false)) &&
             (stage!="unlike_sent" || ((unlikes==1 || (repair==true && unlikes==2)) && likes==0)) &&
             (stage !in setOf("like_sent","complete") || (likes!=null && likes>=1))
         if (!valid) throw AdapterException(TaskStatus.UNKNOWN, "每日点赞续传记录无法核对，未重新选择或操作其他帖子")
-        return Step(TiebaLikeCodec.Post(threadId,forumId,name),stage,likes!!,unlikes!!,cuid,protocol,repair!!)
+        return Step(TiebaLikeCodec.Post(threadId,forumId,name),stage,likes!!,unlikes!!,cuid,protocol,repair!!,candidateRepair!!)
     }
     private fun save(context: Context, step: Step): Step {
         store!!.update { old ->
@@ -66,11 +67,24 @@ internal class TiebaLikeTask(
         }
         return step
     }
-    private fun select(owner: String, bduss: String, forum: Target): Step {
+    private fun select(owner: String, bduss: String, forum: Target, excluded: Set<String> = emptySet()): Step {
         val id=forum.metadata.getValue("forumId");val name=forum.metadata.getValue("forumName")
         val body=request("/c/f/frs/page",TiebaLikeCodec.readFields(bduss)+mapOf("kw" to name,"pn" to "0","rn" to "10","rn_need" to "15","sort_type" to "0","is_good" to "0"))
-        val posts=TiebaLikeCodec.posts(body,owner,id,name)
-        if (posts.isNotEmpty()) return Step(posts[choose(posts.size)],"selected",0,0,TiebaLikeCodec.newCuid())
+        val posts=TiebaLikeCodec.posts(body,owner,id,name).filterNot {it.threadId in excluded}
+        if (posts.isNotEmpty()) {
+            val start=choose(posts.size)
+            var mismatch: AdapterException?=null
+            for(offset in 0 until minOf(3,posts.size)) {
+                val post=posts[(start+offset)%posts.size]
+                try { read(owner,bduss,post) } catch(e: AdapterException) {
+                    if(!TiebaLikeCodec.explicitIdentityMismatch(e)) throw e
+                    mismatch=e
+                    continue
+                }
+                return Step(post,"selected",0,0,TiebaLikeCodec.newCuid())
+            }
+            throw mismatch!!
+        }
         throw AdapterException(TaskStatus.UNKNOWN,"${name}吧本次没有可用帖子，未转到其他吧点赞；可稍后重试")
     }
     private fun read(owner: String, bduss: String, post: TiebaLikeCodec.Post): Boolean = TiebaLikeCodec.liked(
@@ -81,6 +95,8 @@ internal class TiebaLikeTask(
         return result(TaskStatus.SUCCESS,"已确认${step.post.forumName}吧帖子 ${step.post.threadId} 点赞生效；此吧今日仅处理这一帖")
     }
     private fun pending() = result(TaskStatus.PENDING,"当天所选帖子尚需执行剩余点赞步骤")
+    private fun canReplaceCandidate(step: Step, error: AdapterException) = step.stage=="selected" && step.likes==0 && step.unlikes==0 &&
+        !step.candidateRepairUsed && TiebaLikeCodec.explicitIdentityMismatch(error)
     /** One migration write only for a recorded, explicit legacy rejection, never an unknown timeout. */
     private fun canRepair(context: Context, step: Step): Boolean {
         if(step.protocol!="legacy" || step.repairUsed || !((step.stage=="like_sent" && step.likes==2) ||
@@ -94,7 +110,10 @@ internal class TiebaLikeTask(
         val context=context(owner,target)
         val step=checkpoint(context) ?: return null
         if (step.stage=="complete") return result(TaskStatus.ALREADY,"本地记录确认此吧今日帖子 ${step.post.threadId} 点赞任务已完成，未重复取消或点赞")
-        val liked=read(owner,bduss,step.post)
+        val liked=try { read(owner,bduss,step.post) } catch(e: AdapterException) {
+            if(canReplaceCandidate(step,e)) return pending()
+            throw e
+        }
         return when(step.stage) {
             "selected" -> pending()
             "unlike_sent" -> if (!liked || canRepair(context,step)) pending() else result(TaskStatus.UNKNOWN,"取消点赞是否生效仍待确认；未再次取消或更换帖子")
@@ -115,7 +134,14 @@ internal class TiebaLikeTask(
             ?: return result(TaskStatus.UNKNOWN,"此吧已不在当前关注范围，未转到其他吧或继续点赞")
         if (forum.metadata["forumName"].isNullOrBlank()) return result(TaskStatus.UNKNOWN,"此吧名称缺失，未选择或操作帖子")
         var step=previous ?: save(context,select(owner,bduss,forum))
-        var liked=read(owner,bduss,step.post)
+        var liked=try { read(owner,bduss,step.post) } catch(e: AdapterException) {
+            if(!canReplaceCandidate(step,e)) throw e
+            // No write has been sent. Persist the single repair budget before even
+            // searching; an interruption or failed search cannot reset this limit.
+            step=save(context,step.copy(candidateRepairUsed=true))
+            step=save(context,select(owner,bduss,forum,setOf(step.post.threadId)).copy(candidateRepairUsed=true))
+            read(owner,bduss,step.post)
+        }
         if (step.stage=="like_sent") {
             if (liked) return complete(context,step)
             if (step.likes>=2 && !canRepair(context,step)) return result(TaskStatus.UNKNOWN,"同帖已达到有限点赞尝试上限，未继续写入；请在贴吧查看")

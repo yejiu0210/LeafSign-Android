@@ -34,6 +34,15 @@ class OfficialLoginPolicyTest {
         }
         assertTrue(OfficialLoginPolicy.allowed(Platform.NETEASE, "https://music.163.com:443/"))
     }
+    @Test fun heyboxSessionSnapshotOnlyReadsTrustedOfficialPages() {
+        listOf("https://login.xiaoheihe.cn/", "https://xiaoheihe.cn/app/bbs/home", "https://www.xiaoheihe.cn/").forEach {
+            assertTrue(OfficialLoginPolicy.canReadHeyboxSession(it))
+        }
+        listOf("https://api.xiaoheihe.cn/", "http://login.xiaoheihe.cn/", "https://login.xiaoheihe.cn.evil.test/",
+            "https://user:secret@login.xiaoheihe.cn/", "https://login.xiaoheihe.cn:444/", "about:blank").forEach {
+            assertFalse(OfficialLoginPolicy.canReadHeyboxSession(it))
+        }
+    }
     @Test fun tokenBodyIsReadOnlyFromExactOfficialEndpoint() {
         assertTrue(OfficialLoginPolicy.isSklandToken("https://web-api.skland.com/account/info/hg"))
         listOf("http://web-api.skland.com/account/info/hg", "https://www.skland.com/account/info/hg", "https://web-api.skland.com/account/info/hg/", "https://web-api.skland.com/account/info/hg?next=x", "https://web-api.skland.com/account/info/hg#x", "https://web-api.skland.com/account/info/%68g").forEach {

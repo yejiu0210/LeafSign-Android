@@ -22,11 +22,13 @@
 | 百度贴吧 | https://tieba.baidu.com/ | 本工具 WebView 的 BDUSS、可选 STOKEN；复用贴吧适配器校验身份并刷新关注列表 |
 | 森空岛 | https://user.hypergryph.com/login | 仅在此精确官方 origin 读取 HG_SDK.User.getToken()，要求 result===true 与 data.token 字符串；随后由既有森空岛适配器换授权并校验真实 ID 与绑定游戏 / 角色。不混用 skland 域 Cookie |
 | 哔哩哔哩 | https://passport.bilibili.com/login | 本工具 WebView 的 SESSDATA、bili_jct 等白名单 Cookie；复用 B 站适配器校验 UID 与等级加速包资格。网页登录不等于完成观看条件或领取 |
-| 小黑盒 | https://login.xiaoheihe.cn/?redirect_url=https%3A%2F%2Fwww.xiaoheihe.cn%2F&force_relogin=true | 本工具 WebView 的 pkey / user_pkey、heybox_id / user_heybox_id，以及官网生成的可选 x_xhh_tokenid；可信首页返回时优先读取完整 Cookie，向官方 restore_login 校验 ID 并保留其刷新会话 |
+| 小黑盒 | https://login.xiaoheihe.cn/?redirect_url=https%3A%2F%2Fwww.xiaoheihe.cn%2F&force_relogin=true | 当前受信官方页面的 pkey / user_pkey、heybox_id / user_heybox_id，以及可选 x_xhh_tokenid 白名单快照；官方返回或手动检测才接收，完整一致后向 restore_login 校验 ID 并保留刷新会话 |
 
 检测到完整 Cookie 后最多自动进行三次不同授权的身份校验，避免重复轮询网络；也可点「登录完成，检测账号」。没有完整授权、验证不通过或官方验证码未完成时不会添加账号。自动导入仍经主界面再次校验和重复身份检查，更新时要求与旧账号平台 ID 相同。
 
-0.4.1 小黑盒主框架精确允许 `xiaoheihe.cn`、`login.xiaoheihe.cn`、`www.xiaoheihe.cn`、`api.xiaoheihe.cn` 的 HTTPS 443 地址，Cookie 来源同为这四个站点，只取白名单字段。官方登录脚本的账号 ID / pkey 别名写入 `.xiaoheihe.cn`、Path=/、七天的共享 Cookie；未采用 CLI 模式将凭证拼进回调 URL。会话通过一次性内存票据传回，经再次身份校验保存。不读官方 App 私有数据，不自动生成安全 token。登录原生控件跟随本工具的外观设置，官网自身配色由站点和系统 WebView 支持决定。
+小黑盒主框架精确允许 `xiaoheihe.cn`、`login.xiaoheihe.cn`、`www.xiaoheihe.cn`、`api.xiaoheihe.cn` 的 HTTPS 443 地址。0.4.2 读取会话仅限当前 login/apex/www 页面，不读取 api 页、不合并多个域的 CookieManager 快照。官方跳转时短暂等待页面 Cookie 写入并只读白名单；填写官方登录表单时不自动发出身份请求。缺失、游客值、别名冲突仅提示授权尚未取得；官方明确拒绝才归登录失效。读取整体8秒、单次JS3秒超时，页面销毁/重试取消，最多三次不同完整会话的自动身份校验。手动检测可再次校验。
+
+官方登录脚本的账号 ID / pkey 别名写入 `.xiaoheihe.cn`、Path=/、七天的共享 Cookie。刷新返回的原始 pkey 按官方 JavaScript escape 格式写 Cookie，已导入的编码值不再转码；未采用 CLI 模式将凭证拼进回调 URL。会话通过一次性内存票据传回，经再次身份校验保存。不读官方 App 私有数据，不自动生成安全 token。登录原生控件跟随本工具外观设置，官网自身配色由站点和系统 WebView 支持决定。
 
 主文档仅允许 HTTPS 443 的确切官方主机：网易云 music.163.com / y.music.163.com / st.music.163.com / reg.163.com / dl.reg.163.com / passport.163.com；贴吧 tieba.baidu.com / wappass.baidu.com / passport.baidu.com / wappass.bdimg.com；森空岛 www.skland.com / m.skland.com / web-api.skland.com / user.hypergryph.com / as.hypergryph.com；B 站 passport.bilibili.com / www.bilibili.com / m.bilibili.com / big.bilibili.com / api.bilibili.com。精确名单位于 OfficialLoginPolicy.kt。页面 HTTPS 子资源与安全的 about:blank 子框架可加载；不向子资源主动注入平台 Cookie。需要其他主机时先核实；不开放通配或 HTTP。
 
@@ -48,7 +50,7 @@ WebView 安全配置依据：[Android WebView 原生桥安全说明](https://dev
 
 ## 验收与故障
 
-1. 覆盖安装 0.4.1，账号 → 添加账号 → 选平台 / 备注 → 官方网页登录并自动导入。网易使用可缩放电脑页面，森空岛打开鹰角账号中心。小黑盒应先显示手机登录中心，完成后由工具校验并返回账号页；若进入官网电脑弹窗，可双指缩放或点“重新打开手机版登录”，协议本人勾选。完成官网登录后核对昵称与 ID，再选择目标。已有网易账号先校验 / 刷新，再勾选黑胶乐签。
+1. 覆盖安装 0.4.2，账号 → 添加账号 → 选平台 / 备注 → 官方网页登录并自动导入。网易使用可缩放电脑页面，森空岛打开鹰角账号中心。小黑盒应先显示手机登录中心，完成后由工具校验并返回账号页；若进入官网电脑弹窗，可双指缩放或点“重新打开手机版登录”，协议本人勾选。完成官网登录后核对昵称与 ID，再选择目标。已有网易账号先校验 / 刷新，再勾选黑胶乐签。
 2. 另加一个森空岛账号，网页登录必须出现新会话，核对不同 ID 和各自角色 / 区服。尝试重复导入第一个账号应被拒绝，更新已有账号时登录另一账号也应拒绝。
 3. 在首页 / 记录页截图应可保存；登录页应始终看到原生标题 / 返回，网页故障时可见固定原因与重试。森空岛授权检测期间只能看到原生进度，不能看到 token。设备或工作资料策略仍可能另行禁止截图。
 4. 取消、旋转、后台进程中断或票据过期时不能产生未经校验的新账号。官方页面可能不支持 WebView，验证码只能本人完成。遇到需要跳转官方 App 的页面可选网页的其他方式，或使用本地手动凭证备用入口。

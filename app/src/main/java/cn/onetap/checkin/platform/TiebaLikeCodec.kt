@@ -19,6 +19,21 @@ internal object TiebaLikeCodec {
         else -> null
     }
     private fun positive(value: Any?) = number(value)?.takeIf { it > 0 }?.toString()
+    private fun identityFailure(field: String, expected: String, actual: Any?, message: String): Nothing {
+        val observed = positive(actual) ?: when {
+            actual == null || actual == JSONObject.NULL -> "missing"
+            actual == "0" || (actual is Number && number(actual) == 0L) -> "zero"
+            else -> "invalid"
+        }
+        throw AdapterException(TaskStatus.UNKNOWN,message,"tieba field=$field expected=${positive(expected) ?: "missing"} actual=$observed")
+    }
+    /** Only a positive, contradictory public ID can justify rejecting an unwritten candidate. */
+    fun explicitIdentityMismatch(error: AdapterException): Boolean {
+        if(error.status != TaskStatus.UNKNOWN) return false
+        val match=Regex("tieba field=(?:thread_id|forum_id|redundant_fid) expected=([1-9][0-9]{0,18}) actual=([1-9][0-9]{0,18})").matchEntire(error.diagnostic)
+            ?: return false
+        return match.groupValues[1] != match.groupValues[2]
+    }
     fun requireSuccess(body: JSONObject, action: String) {
         val code = number(body.opt("error_code"))
         if (code == 0L) return
@@ -64,9 +79,19 @@ internal object TiebaLikeCodec {
         requireSuccess(body, "读取点赞状态")
         checkUser(body, owner)
         val thread = body.optJSONObject("thread")
-        if (positive(thread?.opt("id")) != post.threadId || positive(body.optJSONObject("forum")?.opt("id")) != post.forumId ||
-            (thread?.has("fid") == true && positive(thread.opt("fid")) != post.forumId))
-            throw AdapterException(TaskStatus.UNKNOWN, "点赞状态的帖子或贴吧身份不一致，未继续操作")
+        if (positive(thread?.opt("id")) != post.threadId)
+            identityFailure("thread_id",post.threadId,thread?.opt("id"),"帖子详情返回的主题帖 ID 与所选帖子不一致或缺失，未继续操作")
+        val forumId=body.optJSONObject("forum")?.opt("id")
+        if (positive(forumId) != post.forumId)
+            identityFailure("forum_id",post.forumId,forumId,"帖子详情返回的贴吧 ID 与所选贴吧不一致或缺失，未继续操作")
+        if(thread?.has("fid")==true) {
+            val redundant=thread.opt("fid")
+            // ThreadInfo's optional proto3 scalar fid defaults to zero. The detail's
+            // mandatory top-level forum.id and thread.id above still prove the target.
+            val unset=redundant=="0" || (redundant is Number && number(redundant)==0L)
+            if(!unset && positive(redundant)!=post.forumId)
+                identityFailure("redundant_fid",post.forumId,redundant,"帖子详情的附加贴吧 ID 与主贴吧身份冲突或无法识别，未继续操作")
+        }
         val agree = thread?.optJSONObject("agree")
         if (number(agree?.opt("agree_type")) == 5L)
             throw AdapterException(TaskStatus.UNKNOWN, "帖子返回点踩状态，未自动更改该态度")

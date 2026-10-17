@@ -67,6 +67,8 @@ class HeyboxAdapterTest {
             assertFalse(params.containsKey("imei"))
             assertFalse(params.containsKey("device_info"))
             assertEquals("synthetic-session", cookies["pkey"])
+            assertFalse("Official web restore_login authenticates by Cookie, not a credential URL", params.containsKey("pkey"))
+            assertFalse(params.containsKey("user_pkey"))
             identity()
         }
         val actual = adapter.validate(cookie)
@@ -215,6 +217,38 @@ class HeyboxAdapterTest {
         assertEquals(result.updatedCredential, store.read().accounts.first { it.id == "main" }.credential)
         assertEquals(cookie, store.read().accounts.first { it.id == "other" }.credential)
         assertEquals(cookie, store.read().accounts.first { it.id == "tieba" }.credential)
+    }
+
+    @Test fun refreshedSessionUsesTheOfficialEscapedCookieRepresentation() {
+        val rawSession = "synthetic-session=+/%:@_-."
+        val wireSession = "synthetic-session%3D+/%25%3A@_-."
+        val store = MemoryStore(AppState(accounts = listOf(account())))
+        val adapter = HeyboxAdapter(store) { path, params, cookies ->
+            assertFalse(params.containsKey("pkey"))
+            assertFalse(params.containsKey("user_pkey"))
+            if (path == HeyboxAdapter.IDENTITY_PATH) identity().also { it.getJSONObject("result").put("pkey", rawSession) }
+            else {
+                assertEquals(wireSession, cookies["pkey"])
+                assertEquals(wireSession, cookies["user_pkey"])
+                task("finish")
+            }
+        }
+        assertEquals(TaskStatus.ALREADY, adapter.query(cookie, target()).status)
+        assertEquals(wireSession, adapter.credentials(store.read().accounts.single().credential)["pkey"])
+    }
+
+    @Test fun importedCookieValuesRemainEncodedOnceAndPreservePlusSigns() {
+        val encodedSession = "synthetic%3D+/%25%3A"
+        val imported = "user_heybox_id=123; user_pkey=$encodedSession; x_xhh_tokenid=synthetic%2Btoken"
+        val adapter = HeyboxAdapter { path, params, cookies ->
+            assertEquals(HeyboxAdapter.IDENTITY_PATH, path)
+            assertFalse(params.containsKey("pkey"))
+            assertEquals(encodedSession, cookies["pkey"])
+            assertEquals(encodedSession, cookies["user_pkey"])
+            assertEquals("synthetic%2Btoken", cookies["x_xhh_tokenid"])
+            identity()
+        }
+        assertEquals("123", adapter.validate(imported).userId)
     }
 
     @Test fun refreshDoesNotOverwriteUserCredentialChangedDuringRequest() {

@@ -27,18 +27,25 @@ class TiebaLikeTaskTest {
         var writeError: Int?=null
         var responseOwner=owner
         var responseForum=initialForum
+        var candidateThreads=listOf(candidateThread)
+        var onRead:((JSONObject,Map<String,String>)->Unit)?=null
+        var onCandidates:(()->Unit)?=null
         var onWrite:(()->Unit)?=null
         val writes=mutableListOf<Map<String,String>>()
         val reads=mutableListOf<Map<String,String>>()
         fun call(path:String,fields:Map<String,String>):JSONObject {
             assertEquals(bduss,fields["BDUSS"])
             return when(path) {
-                "/c/f/frs/page" -> JSONObject().put("error_code",0).put("user",user()).put("forum",JSONObject().put("id",responseForum))
-                    .put("thread_list",JSONArray().put(JSONObject().put("id",candidateThread).put("tid",candidateThread).put("fid",responseForum)))
+                "/c/f/frs/page" -> {
+                    onCandidates?.invoke()
+                    JSONObject().put("error_code",0).put("user",user()).put("forum",JSONObject().put("id",responseForum))
+                        .put("thread_list",JSONArray().apply {candidateThreads.forEach {put(JSONObject().put("id",it).put("tid",it).put("fid",responseForum))}})
+                }
                 "/c/f/pb/page" -> {
                     reads+=fields
                     JSONObject().put("error_code",0).put("user",user()).put("forum",JSONObject().put("id",responseForum))
                         .put("thread",JSONObject().put("id",fields["kz"]).put("agree",JSONObject().apply { if(!unknownRead)put("has_agree",if(liked)1 else 0) }))
+                        .also {onRead?.invoke(it,fields)}
                 }
                 "/c/c/agree/opAgree" -> {
                     onWrite?.invoke();writes+=fields
@@ -219,7 +226,98 @@ class TiebaLikeTaskTest {
     @Test fun unknownReadNeverLeadsToMutation() {
         val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {unknownRead=true}
         expectStatus(TaskStatus.UNKNOWN){ task(store,api).execute(uid,bduss,tbs,target,listOf(forum)) }
-        assertTrue(api.writes.isEmpty());assertEquals("selected",store.state.checkpoints.single().values["stage"])
+        assertTrue(api.writes.isEmpty());assertTrue(store.state.checkpoints.isEmpty())
+    }
+    @Test fun candidateDetailIsVerifiedBeforeSelectionAndWrongForumCandidateIsSkippedWithoutWritingIt() {
+        val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {
+            candidateThreads=listOf("20","21")
+            onRead={body,fields -> if(fields["kz"]=="20")body.getJSONObject("forum").put("id",11)}
+        }
+        api.onWrite={assertEquals("21",store.state.checkpoints.single().values["threadId"])}
+        assertEquals(TaskStatus.SUCCESS,task(store,api).execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals(listOf("21"),api.writes.map {it["thread_id"]})
+        assertEquals("21",store.state.checkpoints.single().values["threadId"])
+        assertFalse(api.writes.any {it["thread_id"]=="20"})
+    }
+    @Test fun candidateSearchChecksAtMostThreeAndStopsOnMissingIdentityRatherThanGuessing() {
+        for(missing in listOf(false,true)) {
+            val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {
+                candidateThreads=listOf("20","21","22","23")
+                onRead={body,_ -> if(missing)body.remove("forum") else body.getJSONObject("forum").put("id",11)}
+            }
+            expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+            assertEquals(if(missing)1 else 3,api.reads.size)
+            assertTrue(api.writes.isEmpty());assertTrue(store.state.checkpoints.isEmpty())
+        }
+    }
+    @Test fun oldUnwrittenMismatchedCandidateCanBeReplacedOnceWithVerifiedCandidateInSameForum() {
+        val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(checkpoint("selected"))))
+        val api=Api().apply {
+            candidateThreads=listOf("20","21")
+            onRead={body,fields -> if(fields["kz"]=="20")body.getJSONObject("thread").put("id",99)}
+            onCandidates={val saved=store.state.checkpoints.single().values
+                assertEquals("20",saved["threadId"]);assertEquals("true",saved["candidateRepairUsed"])
+                assertEquals("0",saved["likeAttempts"]);assertEquals("0",saved["unlikeAttempts"])
+            }
+        }
+        val task=task(store,api)
+        assertEquals(TaskStatus.PENDING,task.query(uid,bduss,target)?.status)
+        assertEquals(TaskStatus.SUCCESS,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals(listOf("21"),api.writes.map {it["thread_id"]})
+        assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])
+        assertEquals("1",store.state.checkpoints.single().values["likeAttempts"])
+        assertEquals(TaskStatus.ALREADY,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals(1,api.writes.size)
+    }
+    @Test fun matchingExistingCandidateKeepsTheOriginalThreadAndDoesNotConsumeRepairBudget() {
+        val prior=checkpoint("selected")
+        val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(prior)))
+        val api=Api().apply {onCandidates={fail("valid saved candidate must not be replaced")}}
+        assertEquals(TaskStatus.SUCCESS,task(store,api).execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals(listOf("20"),api.writes.map {it["thread_id"]})
+        val saved=store.state.checkpoints.single().values
+        assertEquals("20",saved["threadId"]);assertEquals("false",saved["candidateRepairUsed"])
+        assertEquals("1",saved["likeAttempts"]);assertEquals("0",saved["unlikeAttempts"])
+    }
+    @Test fun failedCandidateRepairBudgetIsSavedBeforeSearchAndCannotSearchAgainAfterRestart() {
+        val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(checkpoint("selected"))))
+        var searches=0
+        val api=Api().apply {
+            candidateThreads=listOf("20","21","22","23","24")
+            onRead={body,_ -> body.getJSONObject("forum").put("id",11)}
+            onCandidates={searches++;assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])}
+        }
+        expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+        assertEquals(1,searches);assertEquals("20",store.state.checkpoints.single().values["threadId"])
+        assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])
+        assertEquals(4,api.reads.size)
+        expectStatus(TaskStatus.UNKNOWN){task(store,api).query(uid,bduss,target)}
+        expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+        assertEquals(1,searches);assertTrue(api.writes.isEmpty())
+    }
+    @Test fun sentWriteOrOwnerFailureCannotReplaceCandidateOrResetAttempts() {
+        for(prior in listOf(checkpoint("like_sent",likes=1),checkpoint("unlike_sent",unlikes=1),checkpoint("selected"))) {
+            val ownerFailure=prior.values["stage"]=="selected"
+            val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(prior)))
+            val api=Api().apply {
+                onRead={body,_ -> if(ownerFailure)body.getJSONObject("user").put("id",200) else body.getJSONObject("thread").put("id",99)}
+                onCandidates={fail("must not search")}
+            }
+            expectStatus(if(ownerFailure)TaskStatus.EXPIRED else TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+            assertEquals(prior,store.state.checkpoints.single());assertTrue(api.writes.isEmpty())
+        }
+    }
+    @Test fun unwrittenCandidateNetworkOrManualErrorCannotConsumeReplacementOrSearchOtherThreads() {
+        for(manual in listOf(false,true)) {
+            val prior=checkpoint("selected")
+            val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(prior)));val api=Api().apply {
+                onRead={body,_ -> if(manual)body.put("error_code",999).put("error_msg","请完成安全验证") else throw IOException("synthetic timeout")}
+                onCandidates={fail("must not search")}
+            }
+            if(manual)expectStatus(TaskStatus.MANUAL){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+            else try {task(store,api).execute(uid,bduss,tbs,target,listOf(forum));fail("timeout expected")}catch(_:IOException){}
+            assertEquals(prior,store.state.checkpoints.single());assertTrue(api.writes.isEmpty())
+        }
     }
     @Test fun wrongOwnerOrForumNeverGetsLiked() {
         for(wrongOwner in listOf(true,false)) {
@@ -289,6 +387,39 @@ class TiebaLikeTaskTest {
         expectStatus(TaskStatus.EXPIRED){TiebaLikeCodec.liked(body().apply {getJSONObject("user").put("id",200)},uid,post)}
         expectStatus(TaskStatus.UNKNOWN){TiebaLikeCodec.liked(body().apply {remove("user")},uid,post)}
         expectStatus(TaskStatus.EXPIRED){TiebaLikeCodec.liked(body().apply {getJSONObject("user").put("is_login",0).put("id",0)},uid,post)}
+    }
+    @Test fun redundantForumZeroIsUnsetOnlyAfterMatchingMandatoryThreadForumAndOwner() {
+        val post=TiebaLikeCodec.Post("20","10","测试")
+        fun body()=JSONObject("""{"error_code":0,"user":{"id":100,"is_login":1},"forum":{"id":10},"thread":{"id":20,"agree":{"has_agree":1}}}""")
+        for(zero in listOf<Any>(0,0L,"0")) {
+            assertTrue(TiebaLikeCodec.liked(body().apply {getJSONObject("thread").put("fid",zero)},uid,post))
+            expectStatus(TaskStatus.UNKNOWN){TiebaLikeCodec.liked(body().apply {getJSONObject("thread").put("fid",zero).put("id",21)},uid,post)}
+            expectStatus(TaskStatus.UNKNOWN){TiebaLikeCodec.liked(body().apply {getJSONObject("thread").put("fid",zero);getJSONObject("forum").put("id",11)},uid,post)}
+            expectStatus(TaskStatus.EXPIRED){TiebaLikeCodec.liked(body().apply {getJSONObject("thread").put("fid",zero);getJSONObject("user").put("id",200)},uid,post)}
+        }
+        for(invalid in listOf<Any>(JSONObject.NULL,-1,"synthetic-secret",true,0.0,"00","-0"))
+            expectStatus(TaskStatus.UNKNOWN){TiebaLikeCodec.liked(body().apply {getJSONObject("thread").put("fid",invalid)},uid,post)}
+        assertTrue(TiebaLikeCodec.liked(body().apply {getJSONObject("thread").put("fid",10)},uid,post))
+        expectStatus(TaskStatus.UNKNOWN){TiebaLikeCodec.liked(body().apply {getJSONObject("thread").put("fid",11)},uid,post)}
+    }
+    @Test fun identityDiagnosticsContainOnlyPublicNumericIdsAndDistinguishFieldsAndUnknownShapes() {
+        val post=TiebaLikeCodec.Post("20","10","测试")
+        fun body()=JSONObject("""{"error_code":0,"user":{"id":100,"is_login":1},"forum":{"id":10},"thread":{"id":20,"agree":{"has_agree":1}}}""")
+        for((field,changed) in listOf(
+            "thread_id" to body().apply {getJSONObject("thread").put("id",21)},
+            "forum_id" to body().apply {getJSONObject("forum").put("id",11)},
+            "redundant_fid" to body().apply {getJSONObject("thread").put("fid",11)})) {
+            try {TiebaLikeCodec.liked(changed,uid,post);fail("identity mismatch expected")}catch(e:AdapterException) {
+                assertEquals("tieba field=$field expected=${if(field=="thread_id")20 else 10} actual=${if(field=="thread_id")21 else 11}",e.diagnostic)
+                assertTrue(TiebaLikeCodec.explicitIdentityMismatch(e))
+            }
+        }
+        for((value,description) in listOf<Pair<Any,String>>(JSONObject.NULL to "missing",0 to "zero","synthetic-secret" to "invalid")) {
+            try {TiebaLikeCodec.liked(body().apply {getJSONObject("thread").put("id",value)},uid,post);fail("unknown identity expected")}catch(e:AdapterException) {
+                assertEquals("tieba field=thread_id expected=20 actual=$description",e.diagnostic)
+                assertFalse(TiebaLikeCodec.explicitIdentityMismatch(e));assertFalse(e.message.contains("synthetic-secret"))
+            }
+        }
     }
     @Test fun responseCodesAndPersonalStateMustBeExplicit() {
         for(raw in listOf("{}","{\"error_code\":null}","{\"error_code\":0.0}","{\"error_code\":false}","{\"error_code\":999,\"error_msg\":\"synthetic-secret\"}"))

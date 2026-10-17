@@ -27,6 +27,7 @@ import cn.onetap.checkin.CheckInApp
 import cn.onetap.checkin.core.AdapterException
 import cn.onetap.checkin.core.Platform
 import cn.onetap.checkin.core.TaskStatus
+import cn.onetap.checkin.core.Rules
 import cn.onetap.checkin.theme.ThemePalette
 import kotlinx.coroutines.*
 import org.json.JSONObject
@@ -69,6 +70,7 @@ class WebLoginActivity : ComponentActivity() {
     private var sessionTimeout: Job? = null
     private var validationJob: Job? = null
     private var sklandProbeJob: Job? = null
+    private var heyboxProbeJob: Job? = null
     private var sessionGeneration = 0
     private var navigationGeneration = 0
     private var failedNavigation = false
@@ -166,6 +168,7 @@ class WebLoginActivity : ComponentActivity() {
 
     private fun beginFreshSession() {
         if (closing) return
+        validationJob?.cancel(); sklandProbeJob?.cancel(); heyboxProbeJob?.cancel()
         val generation = ++sessionGeneration
         preparing = true; checking = false; loading = false; hidePage = false; cleaned = false
         disposeBrowser(); placeholder.text = "正在准备独立登录会话…"; placeholder.visibility = View.VISIBLE
@@ -248,16 +251,14 @@ class WebLoginActivity : ComponentActivity() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val allowed = if (request.isForMainFrame) allowedNavigation(request.url) else OfficialLoginPolicy.allowedSubframe(request.url.toString())
             if (!allowed && request.isForMainFrame) failPage("官网尝试跳转到非 HTTPS 或未经核实的地址，已阻止。请使用网页内其他登录方式。", stop = false)
-            if (allowed && request.isForMainFrame && platform==Platform.HEYBOX && !preparing && !checking && !closing &&
-                autoChecks<3 && OfficialLoginPolicy.isHeyboxLoginReturn(request.url.toString())) {
-                // Official login writes root-domain cookies before redirecting to its community.
-                // Validate that session first; the landing site's login UI is not an auth result.
-                val credential=cookieCredential()
-                if(credential!=null && newAutoCredential(credential)) {
-                    pageTimeout?.cancel(); loading=false; failedNavigation=false
-                    validateCredential(credential)
-                    return true
-                }
+            if (allowed && request.isForMainFrame && view === page && platform==Platform.HEYBOX && !preparing && !checking && !closing &&
+                autoChecks<3 && OfficialLoginPolicy.isHeyboxLoginReturn(request.url.toString()) &&
+                OfficialLoginPolicy.canReadHeyboxSession(view.url.orEmpty())) {
+                // The login center writes document.cookie just before the official redirect.
+                // Read that live, coherent scope; CookieManager may still hold the earlier values.
+                pageTimeout?.cancel(); loading=false; failedNavigation=false
+                probeHeyboxSession(view, manual=false)
+                return true
             }
             return !allowed
         }
@@ -317,7 +318,7 @@ class WebLoginActivity : ComponentActivity() {
         }
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail?): Boolean {
             if (view === page) {
-                pageTimeout?.cancel(); checking = false; loading = false; validationJob?.cancel(); sklandProbeJob?.cancel()
+                pageTimeout?.cancel(); checking = false; loading = false; validationJob?.cancel(); sklandProbeJob?.cancel(); heyboxProbeJob?.cancel()
                 disposeBrowser(rendererGone = true); placeholder.visibility = View.VISIBLE
                 placeholder.text = "网页渲染进程已退出，可以重新加载官网恢复。"
                 showStatus("系统 WebView 渲染进程退出。请重新加载；若重复出现，请更新 WebView / Chrome。")
@@ -361,12 +362,14 @@ class WebLoginActivity : ComponentActivity() {
     }
 
     private fun cookieCredential(): String? {
+        // Heybox uses a live single-page snapshot instead of merging independent host jars.
+        if (platform == Platform.HEYBOX) return null
         val urls = when (platform) {
             Platform.NETEASE -> listOf("https://music.163.com/")
             Platform.TIEBA -> listOf("https://tieba.baidu.com/")
             Platform.BILIBILI -> listOf("https://api.bilibili.com/", "https://www.bilibili.com/")
             Platform.SKLAND -> listOf("https://www.skland.com/", "https://m.skland.com/")
-            Platform.HEYBOX -> listOf("https://xiaoheihe.cn/", "https://www.xiaoheihe.cn/", "https://login.xiaoheihe.cn/", "https://api.xiaoheihe.cn/")
+            Platform.HEYBOX -> emptyList()
         }
         val allowed = when (platform) {
             Platform.NETEASE -> setOf("MUSIC_U", "__csrf")
@@ -387,13 +390,17 @@ class WebLoginActivity : ComponentActivity() {
             Platform.SKLAND -> setOf("SK_OAUTH_CRED_KEY")
             Platform.HEYBOX -> emptySet()
         }
-        val complete=if(platform==Platform.HEYBOX) (cookies.containsKey("pkey")||cookies.containsKey("user_pkey")) &&
-            (cookies.containsKey("heybox_id")||cookies.containsKey("user_heybox_id")) else required.all {it in cookies}
+        val complete=required.all {it in cookies}
         return if (complete) cookies.entries.joinToString("; ") { "${it.key}=${it.value}" } else null
     }
     private fun detect(manual: Boolean) {
         val browser = page ?: return
         if (preparing || closing || checking || hidePage || loading || failedNavigation || (!manual && autoChecks >= 3)) return
+        if (platform == Platform.HEYBOX) {
+            // Do not test guest/stale cookies while the official password/SMS form is being filled.
+            if (!manual && !OfficialLoginPolicy.isHeyboxLoginReturn(browser.url.orEmpty())) return
+            probeHeyboxSession(browser, manual); return
+        }
         if (platform == Platform.SKLAND && OfficialLoginPolicy.isHypergryphAccount(browser.url.orEmpty())) {
             // The current official portal routes a completed, agreed login to /userInfo. Do not
             // hide a user's SMS form every three seconds while /login is still being completed.
@@ -414,6 +421,47 @@ class WebLoginActivity : ComponentActivity() {
         val fingerprint = MessageDigest.getInstance("SHA-256").digest(credential.toByteArray()).joinToString("") { "%02x".format(it) }
         if (fingerprint == lastAutoFingerprint) return false
         lastAutoFingerprint = fingerprint; autoChecks++; return true
+    }
+
+    private fun probeHeyboxSession(browser: WebView, manual: Boolean) {
+        if (heyboxProbeJob?.isActive == true || !OfficialLoginPolicy.canReadHeyboxSession(browser.url.orEmpty())) return
+        val generation=sessionGeneration
+        checking=true
+        concealPage("正在接收本次小黑盒官网登录会话…")
+        showStatus("正在接收本次小黑盒官网登录会话…")
+        heyboxProbeJob=lifecycleScope.launch {
+            var validating=false
+            try {
+                val credential=withTimeout(8_000) {
+                    // Give the official synchronous Cookie writes a short settlement window.
+                    repeat(6) {
+                        delay(200)
+                        if (closing || generation!=sessionGeneration || page!==browser ||
+                            !OfficialLoginPolicy.canReadHeyboxSession(browser.url.orEmpty())) return@withTimeout null
+                        val raw=evaluate(browser, HeyboxLoginCookies.SNAPSHOT_SCRIPT)
+                        if (closing || generation!=sessionGeneration || page!==browser ||
+                            !OfficialLoginPolicy.canReadHeyboxSession(browser.url.orEmpty())) return@withTimeout null
+                        val snapshot=try { JSONTokener(raw).nextValue() as? String } catch (_: Exception) { null }
+                        val candidate=HeyboxLoginCookies.credential(snapshot)
+                        if (candidate!=null) return@withTimeout candidate
+                    }
+                    null
+                }
+                if (credential!=null) {
+                    if (manual || newAutoCredential(credential)) { validating=true; validateCredential(credential) }
+                    else showStatus("此登录会话已检测过。完成重新登录后，请点击“登录完成，检测账号”。")
+                } else showStatus("尚未取得完整的小黑盒登录会话。请在官方页面完成登录和验证后，再点“登录完成，检测账号”。")
+            } catch (_: TimeoutCancellationException) {
+                if (!closing) showStatus("小黑盒网页登录会话读取超时，尚未保存账号。请重新检测或加载官方登录页。")
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                if (!closing) showStatus("小黑盒官方页面暂时无法读取登录会话，请完成登录后重新检测。")
+            } finally {
+                if (!validating && !closing && generation==sessionGeneration && page===browser) {
+                    checking=false; revealPage(); updateControls()
+                }
+            }
+        }
     }
 
     /** Official user-center index.62f8883d.js uses HG_SDK.User.getToken(), result and data.token. */
@@ -502,7 +550,11 @@ class WebLoginActivity : ComponentActivity() {
                 if (!closing) validationFailed("官方身份校验超时，尚未保存账号。请检查网络后重试。")
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
-                if (!closing) validationFailed(when ((e as? AdapterException)?.status) {
+                val adapterError=e as? AdapterException
+                if (!closing) validationFailed(if (platform==Platform.HEYBOX && adapterError!=null) {
+                    val diagnostic=Rules.safeDiagnostic(adapterError.diagnostic)
+                    adapterError.message + if(diagnostic.isNotBlank()) "\n诊断：$diagnostic" else ""
+                } else when (adapterError?.status) {
                     TaskStatus.EXPIRED -> "网页登录授权未生效或已过期，请完成官方登录后重试。"
                     TaskStatus.MANUAL -> "平台要求手动验证，请在官网完成验证码或安全检查后重试。"
                     else -> "官方身份校验未通过，请检查网络并完成网页登录后重试。"
@@ -521,7 +573,7 @@ class WebLoginActivity : ComponentActivity() {
     }
     private fun loadLoginPage() {
         val browser = page ?: return
-        pageTimeout?.cancel(); sklandProbeJob?.cancel(); browser.stopLoading()
+        pageTimeout?.cancel(); sklandProbeJob?.cancel(); heyboxProbeJob?.cancel(); browser.stopLoading()
         checking = false; loading = true; failedNavigation = false; autoChecks = 0; lastAutoFingerprint = ""
         concealPage("正在加载官方登录页…"); showStatus("正在加载官网，请稍候。加载异常会在上方显示原因。")
         armPageTimeout(); browser.loadUrl(OfficialLoginPolicy.startUrl(platform))
@@ -529,7 +581,7 @@ class WebLoginActivity : ComponentActivity() {
     private fun closeSession(credential: String?) {
         if (closing) return
         closing = true; val generation = ++sessionGeneration
-        pageTimeout?.cancel(); sessionTimeout?.cancel(); sklandProbeJob?.cancel()
+        pageTimeout?.cancel(); sessionTimeout?.cancel(); sklandProbeJob?.cancel(); heyboxProbeJob?.cancel()
         checking = false; preparing = false; loading = false
         showStatus("正在清理网页登录会话…"); disposeBrowser()
         placeholder.visibility = View.VISIBLE; placeholder.text = "正在清理本次网页登录会话…"
@@ -561,7 +613,7 @@ class WebLoginActivity : ComponentActivity() {
         }
     }
     override fun onDestroy() {
-        pageTimeout?.cancel(); sessionTimeout?.cancel(); sklandProbeJob?.cancel(); disposeBrowser()
+        pageTimeout?.cancel(); sessionTimeout?.cancel(); sklandProbeJob?.cancel(); heyboxProbeJob?.cancel(); disposeBrowser()
         // Do not race a new Activity with a late asynchronous cookie clear after recreation.
         if (!cleaned) try { WebStorage.getInstance().deleteAllData() } catch (_: Exception) { }
         super.onDestroy()

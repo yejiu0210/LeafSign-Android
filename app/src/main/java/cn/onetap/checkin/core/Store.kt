@@ -96,8 +96,11 @@ object Rules {
         val reasons = setOf("identity missing result", "identity missing server uid", "identity conflicting server uid",
             "identity missing server session", "missing task_list", "invalid task group", "invalid task object",
             "missing or ambiguous sign task", "unrecognized sign state", "unrecognized business status",
-            "auth required", "manual verification required", "invalid cookie").map { "heybox $it" }
-        return (numeric+reasons.filter { it==value }).distinct().joinToString("; ").take(240)
+            "auth required", "manual verification required", "invalid cookie", "identity cookie mismatch").map { "heybox $it" }
+        // Only public thread/forum identifiers; account IDs and server text are excluded.
+        val tiebaIdentity = Regex("tieba field=(?:thread_id|forum_id|redundant_fid) expected=[1-9][0-9]{0,18} actual=(?:[1-9][0-9]{0,18}|missing|zero|invalid)")
+            .matchEntire(value)?.value
+        return (numeric+reasons.filter { it==value }+listOfNotNull(tiebaIdentity)).distinct().joinToString("; ").take(240)
     }
     fun resultTitle(status: TaskStatus, targetId: String): String = if(targetId.startsWith("tieba:like:")) when(status) {
         TaskStatus.SUCCESS -> "点赞完成"

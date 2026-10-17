@@ -34,8 +34,11 @@ class HeyboxAdapter internal constructor(
         if (cookieId != null && cookieId != uid)
             throw AdapterException(TaskStatus.EXPIRED, "小黑盒登录身份与当前凭证不一致，请重新登录", "heybox identity cookie mismatch")
         // restore_login refreshes pkey. Use the server's new session for every following operation.
+        // The official login center writes escape(result.pkey), while CookieManager/imports
+        // already contain that wire representation. Never encode imported Cookie values twice.
+        val refreshedWirePkey = cookieWireValue(refreshedPkey)
         val refreshedCookies = cookies.toMutableMap().apply {
-            put("pkey", refreshedPkey); put("user_pkey", refreshedPkey)
+            put("pkey", refreshedWirePkey); put("user_pkey", refreshedWirePkey)
         }
         val refreshedCredential = refreshedCookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
         if (refreshedCredential != credential) store?.update { state ->
@@ -130,6 +133,14 @@ class HeyboxAdapter internal constructor(
         const val TASK_PATH = "/task/list_v2/"
         const val SIGN_PATH = "/task/sign_v3/sign"
         val COOKIE_NAMES = setOf("pkey", "user_pkey", "heybox_id", "user_heybox_id", "x_xhh_tokenid")
+
+        /** ASCII subset of the official login center's JavaScript escape(value) Cookie format. */
+        private fun cookieWireValue(value: String): String = buildString {
+            for (character in value) {
+                if (character in 'a'..'z' || character in 'A'..'Z' || character in '0'..'9' || character in "@*_+-./") append(character)
+                else append('%').append(character.code.toString(16).uppercase().padStart(2, '0'))
+            }
+        }
 
         fun parseTaskState(response: JSONObject): TaskResult {
             rejection(response)?.let { return TaskResult(it.status, it.message, it.diagnostic) }

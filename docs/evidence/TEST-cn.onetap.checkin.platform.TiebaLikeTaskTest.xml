@@ -1,30 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.platform.TiebaLikeTaskTest" tests="24" skipped="0" failures="0" errors="0" timestamp="2026-10-17T08:46:27.182Z" hostname="PC-20260405TBKV" time="0.097">
+<testsuite name="cn.onetap.checkin.platform.TiebaLikeTaskTest" tests="33" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:08:49.694Z" hostname="PC-20260405TBKV" time="0.316">
   <properties/>
-  <testcase name="wrongOwnerOrForumNeverGetsLiked" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.007"/>
-  <testcase name="eachFollowedForumGetsItsOwnThreadAndIndependentDailyLimit" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.008"/>
-  <testcase name="malformedCheckpointNeverSelectsAnotherThread" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.002"/>
+  <testcase name="wrongOwnerOrForumNeverGetsLiked" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.012"/>
+  <testcase name="eachFollowedForumGetsItsOwnThreadAndIndependentDailyLimit" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.016"/>
+  <testcase name="malformedCheckpointNeverSelectsAnotherThread" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.003"/>
   <testcase name="interruptedUnlikeResumesOnlyAfterReadConfirmsUnliked" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.001"/>
-  <testcase name="rejectedLegacyUnlikeIsRepairedOnceThenCompletesTheRemainingLike" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.001"/>
-  <testcase name="responseCodesAndPersonalStateMustBeExplicit" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.006"/>
-  <testcase name="anotherForumsCheckpointOrMismatchedTargetCannotBeReused" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.001"/>
-  <testcase name="legacyUnknownTimeoutOrAnotherTaskRejectionCannotRequestRepairBudget" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.029"/>
-  <testcase name="accountAndPeriodCheckpointsStayIsolated" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.003"/>
-  <testcase name="legacy300000AtOldLikeLimitGetsOnlyOneCorrectedWriteOnTheSameThread" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.003"/>
-  <testcase name="threadIdentityAndAnonymousPagesCannotProveOwnVote" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.005"/>
-  <testcase name="failedCorrectedUnlikeIsCheckpointedBeforeWriteAndCannotBeRepeated" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.003"/>
-  <testcase name="opAgreeWireFieldsMatchOriginalAndroidContractAndIndependentSignatures" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.001"/>
+  <testcase name="identityDiagnosticsContainOnlyPublicNumericIdsAndDistinguishFieldsAndUnknownShapes" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.015"/>
+  <testcase name="rejectedLegacyUnlikeIsRepairedOnceThenCompletesTheRemainingLike" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.003"/>
+  <testcase name="responseCodesAndPersonalStateMustBeExplicit" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.007"/>
+  <testcase name="anotherForumsCheckpointOrMismatchedTargetCannotBeReused" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.004"/>
+  <testcase name="legacyUnknownTimeoutOrAnotherTaskRejectionCannotRequestRepairBudget" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.063"/>
+  <testcase name="accountAndPeriodCheckpointsStayIsolated" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.006"/>
+  <testcase name="legacy300000AtOldLikeLimitGetsOnlyOneCorrectedWriteOnTheSameThread" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.002"/>
+  <testcase name="matchingExistingCandidateKeepsTheOriginalThreadAndDoesNotConsumeRepairBudget" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.002"/>
+  <testcase name="failedCandidateRepairBudgetIsSavedBeforeSearchAndCannotSearchAgainAfterRestart" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.005"/>
+  <testcase name="threadIdentityAndAnonymousPagesCannotProveOwnVote" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.007"/>
+  <testcase name="failedCorrectedUnlikeIsCheckpointedBeforeWriteAndCannotBeRepeated" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.002"/>
+  <testcase name="opAgreeWireFieldsMatchOriginalAndroidContractAndIndependentSignatures" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.003"/>
+  <testcase name="candidateSearchChecksAtMostThreeAndStopsOnMissingIdentityRatherThanGuessing" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.004"/>
   <testcase name="freshTaskIsOptInAndQueryDoesNotPretendYesterdaysLikeIsToday" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.0"/>
-  <testcase name="confirmedUnlikedReadAllowsOnlySecondSameThreadLikeAttempt" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.002"/>
-  <testcase name="explicit300000RejectionNeverCompletesOrChangesTheSelectedThread" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.007"/>
-  <testcase name="likeTimeoutIsReconciledWithReadAndNeverSwitchesThread" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.002"/>
+  <testcase name="sentWriteOrOwnerFailureCannotReplaceCandidateOrResetAttempts" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.026"/>
+  <testcase name="confirmedUnlikedReadAllowsOnlySecondSameThreadLikeAttempt" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.008"/>
+  <testcase name="redundantForumZeroIsUnsetOnlyAfterMatchingMandatoryThreadForumAndOwner" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.024"/>
+  <testcase name="explicit300000RejectionNeverCompletesOrChangesTheSelectedThread" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.008"/>
+  <testcase name="likeTimeoutIsReconciledWithReadAndNeverSwitchesThread" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.008"/>
   <testcase name="alreadyLikedThreadIsCancelledOnceThenLikedOnce" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.003"/>
-  <testcase name="unknownReadNeverLeadsToMutation" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.002"/>
-  <testcase name="unlikedThreadGetsExactlyOneLikeAndCheckpointsBeforeWrite" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.002"/>
-  <testcase name="correctedProtocolAndUsedRepairNeverGetAnotherBudgetEvenAfter300000" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.001"/>
-  <testcase name="resumedTaskNeverChangesToAnotherForumIfTheSelectedOneWasUnfollowed" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.0"/>
+  <testcase name="candidateDetailIsVerifiedBeforeSelectionAndWrongForumCandidateIsSkippedWithoutWritingIt" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.004"/>
+  <testcase name="unknownReadNeverLeadsToMutation" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.003"/>
+  <testcase name="unlikedThreadGetsExactlyOneLikeAndCheckpointsBeforeWrite" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.003"/>
+  <testcase name="oldUnwrittenMismatchedCandidateCanBeReplacedOnceWithVerifiedCandidateInSameForum" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.009"/>
+  <testcase name="correctedProtocolAndUsedRepairNeverGetAnotherBudgetEvenAfter300000" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.005"/>
+  <testcase name="resumedTaskNeverChangesToAnotherForumIfTheSelectedOneWasUnfollowed" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.016"/>
   <testcase name="unlikeTimeoutWithoutConfirmedUnlikedStateNeverCancelsAgain" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.002"/>
-  <testcase name="cuidMatchesIndependentUpstreamCryptoVector" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.001"/>
+  <testcase name="unwrittenCandidateNetworkOrManualErrorCannotConsumeReplacementOrSearchOtherThreads" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.004"/>
+  <testcase name="cuidMatchesIndependentUpstreamCryptoVector" classname="cn.onetap.checkin.platform.TiebaLikeTaskTest" time="0.004"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>
