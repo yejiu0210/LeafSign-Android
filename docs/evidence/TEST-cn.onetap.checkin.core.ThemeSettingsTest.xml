@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.core.ThemeSettingsTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:08:48.485Z" hostname="PC-20260405TBKV" time="0.006">
+<testsuite name="cn.onetap.checkin.core.ThemeSettingsTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:27:57.693Z" hostname="PC-20260405TBKV" time="0.006">
   <properties/>
   <testcase name="oldSettingsKeepTheirValuesAndDefaultToSystemTheme" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.004"/>
   <testcase name="explicitThemePersistsWithOtherSettings" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.0"/>

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.core.NetClientSecurityTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:08:46.608Z" hostname="PC-20260405TBKV" time="0.822">
+<testsuite name="cn.onetap.checkin.core.NetClientSecurityTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:27:55.964Z" hostname="PC-20260405TBKV" time="0.97">
   <properties/>
-  <testcase name="unknownHostIsRejectedBeforeAnyNetwork" classname="cn.onetap.checkin.core.NetClientSecurityTest" time="0.796"/>
-  <testcase name="suffixLookalikeIsRejectedBeforeAnyNetwork" classname="cn.onetap.checkin.core.NetClientSecurityTest" time="0.006"/>
-  <testcase name="plaintextIsRejectedBeforeAnyNetwork" classname="cn.onetap.checkin.core.NetClientSecurityTest" time="0.009"/>
+  <testcase name="unknownHostIsRejectedBeforeAnyNetwork" classname="cn.onetap.checkin.core.NetClientSecurityTest" time="0.938"/>
+  <testcase name="suffixLookalikeIsRejectedBeforeAnyNetwork" classname="cn.onetap.checkin.core.NetClientSecurityTest" time="0.008"/>
+  <testcase name="plaintextIsRejectedBeforeAnyNetwork" classname="cn.onetap.checkin.core.NetClientSecurityTest" time="0.005"/>
   <testcase name="alternatePortIsRejectedBeforeAnyNetwork" classname="cn.onetap.checkin.core.NetClientSecurityTest" time="0.006"/>
-  <testcase name="userInfoIsRejectedBeforeAnyNetwork" classname="cn.onetap.checkin.core.NetClientSecurityTest" time="0.003"/>
+  <testcase name="userInfoIsRejectedBeforeAnyNetwork" classname="cn.onetap.checkin.core.NetClientSecurityTest" time="0.013"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

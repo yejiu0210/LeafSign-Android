@@ -126,7 +126,7 @@ class WebLoginActivity : ComponentActivity() {
         root.addView(progressBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)))
         val actions = LinearLayout(this)
         detectButton = Button(this).apply { text = "登录完成，检测账号"; textSize = 12f; setOnClickListener { detect(manual = true) } }
-        retryButton = Button(this).apply { text = if(platform==Platform.HEYBOX) "重新打开手机版登录" else "重新加载官网"; tag = RETRY_TAG; textSize = 12f; setOnClickListener { retryLogin() } }
+        retryButton = Button(this).apply { text = if(platform==Platform.HEYBOX) "重新打开社区登录" else "重新加载官网"; tag = RETRY_TAG; textSize = 12f; setOnClickListener { retryLogin() } }
         styleButton(detectButton); styleButton(retryButton)
         actions.addView(detectButton, LinearLayout.LayoutParams(0, dp(52), 1.2f))
         actions.addView(retryButton, LinearLayout.LayoutParams(0, dp(52), 1f)); root.addView(actions)
@@ -220,8 +220,8 @@ class WebLoginActivity : ComponentActivity() {
                 if (platform == Platform.NETEASE) userAgentString = userAgentString
                     .replace(Regex("\\([^)]*Android[^)]*\\)"), "(X11; Linux x86_64)")
                     .replace(" Version/4.0", "").replace(" Mobile", "")
-                // Heybox's login center has its own mobile viewport. Its desktop-home fallback
-                // has no viewport and a fixed centered dialog: overview keeps the whole form visible.
+                // The requested Heybox community entry has a fixed desktop login dialog.
+                // Overview and pinch zoom keep the full form and agreement within reach.
                 if (platform == Platform.NETEASE || platform == Platform.HEYBOX) {
                     useWideViewPort = true; loadWithOverviewMode = true
                     setSupportZoom(true)
@@ -251,15 +251,6 @@ class WebLoginActivity : ComponentActivity() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val allowed = if (request.isForMainFrame) allowedNavigation(request.url) else OfficialLoginPolicy.allowedSubframe(request.url.toString())
             if (!allowed && request.isForMainFrame) failPage("官网尝试跳转到非 HTTPS 或未经核实的地址，已阻止。请使用网页内其他登录方式。", stop = false)
-            if (allowed && request.isForMainFrame && view === page && platform==Platform.HEYBOX && !preparing && !checking && !closing &&
-                autoChecks<3 && OfficialLoginPolicy.isHeyboxLoginReturn(request.url.toString()) &&
-                OfficialLoginPolicy.canReadHeyboxSession(view.url.orEmpty())) {
-                // The login center writes document.cookie just before the official redirect.
-                // Read that live, coherent scope; CookieManager may still hold the earlier values.
-                pageTimeout?.cancel(); loading=false; failedNavigation=false
-                probeHeyboxSession(view, manual=false)
-                return true
-            }
             return !allowed
         }
         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? =
@@ -288,7 +279,7 @@ class WebLoginActivity : ComponentActivity() {
             } else if (allowedNavigation(uri)) {
                 if (!checking) {
                     revealPage()
-                    showStatus(if(platform==Platform.HEYBOX) "请在官方手机版完成登录，登录后自动导入。电脑弹窗可双指缩放；协议请本人勾选。" else "请在官网完成登录。登录后自动校验，也可点击“登录完成，检测账号”。")
+                    showStatus(if(platform==Platform.HEYBOX) "请点击官方社区的“登录”，完成后自动导入。可双指缩放查看完整弹窗；协议请本人勾选。" else "请在官网完成登录。登录后自动校验，也可点击“登录完成，检测账号”。")
                     detect(manual = false); inspectEmptyPage(view, navigationGeneration)
                 }
             }
@@ -397,7 +388,7 @@ class WebLoginActivity : ComponentActivity() {
         val browser = page ?: return
         if (preparing || closing || checking || hidePage || loading || failedNavigation || (!manual && autoChecks >= 3)) return
         if (platform == Platform.HEYBOX) {
-            // Do not test guest/stale cookies while the official password/SMS form is being filled.
+            // A complete Cookie snapshot is required before any identity request.
             if (!manual && !OfficialLoginPolicy.isHeyboxLoginReturn(browser.url.orEmpty())) return
             probeHeyboxSession(browser, manual); return
         }
@@ -426,16 +417,18 @@ class WebLoginActivity : ComponentActivity() {
     private fun probeHeyboxSession(browser: WebView, manual: Boolean) {
         if (heyboxProbeJob?.isActive == true || !OfficialLoginPolicy.canReadHeyboxSession(browser.url.orEmpty())) return
         val generation=sessionGeneration
-        checking=true
-        concealPage("正在接收本次小黑盒官网登录会话…")
-        showStatus("正在接收本次小黑盒官网登录会话…")
+        // Quiet polling must leave the community's login dialog visible and usable.
+        if (manual) {
+            checking=true
+            concealPage("正在接收本次小黑盒官网登录会话…")
+            showStatus("正在接收本次小黑盒官网登录会话…")
+        }
         heyboxProbeJob=lifecycleScope.launch {
             var validating=false
             try {
                 val credential=withTimeout(8_000) {
-                    // Give the official synchronous Cookie writes a short settlement window.
-                    repeat(6) {
-                        delay(200)
+                    repeat(if(manual) 6 else 1) {
+                        if(manual) delay(200)
                         if (closing || generation!=sessionGeneration || page!==browser ||
                             !OfficialLoginPolicy.canReadHeyboxSession(browser.url.orEmpty())) return@withTimeout null
                         val raw=evaluate(browser, HeyboxLoginCookies.SNAPSHOT_SCRIPT)
@@ -449,13 +442,12 @@ class WebLoginActivity : ComponentActivity() {
                 }
                 if (credential!=null) {
                     if (manual || newAutoCredential(credential)) { validating=true; validateCredential(credential) }
-                    else showStatus("此登录会话已检测过。完成重新登录后，请点击“登录完成，检测账号”。")
-                } else showStatus("尚未取得完整的小黑盒登录会话。请在官方页面完成登录和验证后，再点“登录完成，检测账号”。")
+                } else if (manual) showStatus("尚未取得完整的小黑盒登录会话。请在官方社区完成登录和验证后，再点“登录完成，检测账号”。")
             } catch (_: TimeoutCancellationException) {
-                if (!closing) showStatus("小黑盒网页登录会话读取超时，尚未保存账号。请重新检测或加载官方登录页。")
+                if (manual && !closing) showStatus("小黑盒网页登录会话读取超时，尚未保存账号。请重新检测或加载官方社区。")
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) {
-                if (!closing) showStatus("小黑盒官方页面暂时无法读取登录会话，请完成登录后重新检测。")
+                if (manual && !closing) showStatus("小黑盒官方页面暂时无法读取登录会话，请完成登录后重新检测。")
             } finally {
                 if (!validating && !closing && generation==sessionGeneration && page===browser) {
                     checking=false; revealPage(); updateControls()

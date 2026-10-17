@@ -1,27 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.platform.HeyboxAdapterTest" tests="22" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:08:48.695Z" hostname="PC-20260405TBKV" time="0.693">
+<testsuite name="cn.onetap.checkin.platform.HeyboxAdapterTest" tests="22" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:27:57.866Z" hostname="PC-20260405TBKV" time="0.495">
   <properties/>
-  <testcase name="queryAndEverySignOperationUseTheRefreshedServerPkey" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.102"/>
-  <testcase name="refreshedSessionUsesTheOfficialEscapedCookieRepresentation" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.011"/>
+  <testcase name="queryAndEverySignOperationUseTheRefreshedServerPkey" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.198"/>
+  <testcase name="refreshedSessionUsesTheOfficialEscapedCookieRepresentation" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.013"/>
   <testcase name="officialAuthenticationAndVerificationStatesStopExecution" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.002"/>
-  <testcase name="refreshDoesNotOverwriteUserCredentialChangedDuringRequest" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.008"/>
-  <testcase name="cookieIdentityIsNeverAcceptedWithoutServerProof" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.086"/>
-  <testcase name="refreshPersistsOnlyExactExistingPlatformAndAccountCredential" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.016"/>
-  <testcase name="executesOnlyDailySignThenConfirmsTaskCompletion" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.018"/>
-  <testcase name="importedReplacementReturnsRefreshWithoutMutatingOldStoredCredential" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.005"/>
-  <testcase name="importedCookieValuesRemainEncodedOnceAndPreservePlusSigns" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.006"/>
+  <testcase name="refreshDoesNotOverwriteUserCredentialChangedDuringRequest" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.007"/>
+  <testcase name="cookieIdentityIsNeverAcceptedWithoutServerProof" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.026"/>
+  <testcase name="refreshPersistsOnlyExactExistingPlatformAndAccountCredential" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.055"/>
+  <testcase name="executesOnlyDailySignThenConfirmsTaskCompletion" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.017"/>
+  <testcase name="importedReplacementReturnsRefreshWithoutMutatingOldStoredCredential" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.006"/>
+  <testcase name="importedCookieValuesRemainEncodedOnceAndPreservePlusSigns" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.005"/>
   <testcase name="finishedSignTaskIsTheOnlyCompletionEvidence" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.001"/>
-  <testcase name="missingAndConflictingCookieAliasesAreRejectedWithoutEchoingSecrets" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.095"/>
-  <testcase name="wrongTargetOrChangedAccountStopsBeforeTaskWrite" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.013"/>
-  <testcase name="queryOnlyReadsAndDoesNotWriteOrConsumeAnyResource" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.006"/>
-  <testcase name="unrecognizedWriteWithConfirmedTaskOnlyReportsCurrentCompletion" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.057"/>
-  <testcase name="requestParametersUseFreshNonceWithoutPretendingToBeMobileDevice" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.009"/>
-  <testcase name="validatesServerIdentityAndCreatesOnlyOrdinaryDailySign" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.016"/>
-  <testcase name="loginAndCaptchaDuringWriteDoNotRetryOrContinueOtherWrites" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.024"/>
-  <testcase name="writeOkWithoutTaskConfirmationRemainsUnknown" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.014"/>
-  <testcase name="completedTaskAndUnknownTaskNeverTriggerSignWrite" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.136"/>
-  <testcase name="ignoredFailedAndMissingWriteStatesNeverBecomeNewSuccess" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.039"/>
-  <testcase name="webSignatureMatchesCurrentOfficialJavaScriptVectors" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.017"/>
+  <testcase name="missingAndConflictingCookieAliasesAreRejectedWithoutEchoingSecrets" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.01"/>
+  <testcase name="wrongTargetOrChangedAccountStopsBeforeTaskWrite" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.003"/>
+  <testcase name="queryOnlyReadsAndDoesNotWriteOrConsumeAnyResource" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.008"/>
+  <testcase name="unrecognizedWriteWithConfirmedTaskOnlyReportsCurrentCompletion" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.033"/>
+  <testcase name="requestParametersUseFreshNonceWithoutPretendingToBeMobileDevice" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.012"/>
+  <testcase name="validatesServerIdentityAndCreatesOnlyOrdinaryDailySign" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.003"/>
+  <testcase name="loginAndCaptchaDuringWriteDoNotRetryOrContinueOtherWrites" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.011"/>
+  <testcase name="writeOkWithoutTaskConfirmationRemainsUnknown" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.005"/>
+  <testcase name="completedTaskAndUnknownTaskNeverTriggerSignWrite" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.014"/>
+  <testcase name="ignoredFailedAndMissingWriteStatesNeverBecomeNewSuccess" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.047"/>
+  <testcase name="webSignatureMatchesCurrentOfficialJavaScriptVectors" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.008"/>
   <testcase name="credentialsOnlyForwardExactPlatformCookieNames" classname="cn.onetap.checkin.platform.HeyboxAdapterTest" time="0.002"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>

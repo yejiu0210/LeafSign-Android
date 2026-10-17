@@ -10,7 +10,7 @@ internal object OfficialLoginPolicy {
         Platform.TIEBA -> "https://tieba.baidu.com/"
         Platform.SKLAND -> "https://user.hypergryph.com/login"
         Platform.BILIBILI -> "https://passport.bilibili.com/login"
-        Platform.HEYBOX -> "https://login.xiaoheihe.cn/?redirect_url=https%3A%2F%2Fwww.xiaoheihe.cn%2F&force_relogin=true"
+        Platform.HEYBOX -> "https://xiaoheihe.cn/app/bbs/home"
     }
     private fun hosts(platform: Platform): Set<String> = when (platform) {
         Platform.NETEASE -> setOf("music.163.com", "y.music.163.com", "st.music.163.com", "reg.163.com", "dl.reg.163.com", "passport.163.com")

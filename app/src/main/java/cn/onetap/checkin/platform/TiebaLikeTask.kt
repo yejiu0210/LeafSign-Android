@@ -73,17 +73,19 @@ internal class TiebaLikeTask(
         val posts=TiebaLikeCodec.posts(body,owner,id,name).filterNot {it.threadId in excluded}
         if (posts.isNotEmpty()) {
             val start=choose(posts.size)
-            var mismatch: AdapterException?=null
-            for(offset in 0 until minOf(3,posts.size)) {
+            var rejected: AdapterException?=null
+            // Continue past confirmed unavailable or wrong-forum candidates in this
+            // bounded list. Only the first fully verified candidate can be written.
+            for(offset in 0 until minOf(10,posts.size)) {
                 val post=posts[(start+offset)%posts.size]
                 try { read(owner,bduss,post) } catch(e: AdapterException) {
-                    if(!TiebaLikeCodec.explicitIdentityMismatch(e)) throw e
-                    mismatch=e
+                    if(!rejectUnwrittenCandidate(e)) throw e
+                    rejected=e
                     continue
                 }
                 return Step(post,"selected",0,0,TiebaLikeCodec.newCuid())
             }
-            throw mismatch!!
+            throw rejected!!
         }
         throw AdapterException(TaskStatus.UNKNOWN,"${name}吧本次没有可用帖子，未转到其他吧点赞；可稍后重试")
     }
@@ -95,8 +97,9 @@ internal class TiebaLikeTask(
         return result(TaskStatus.SUCCESS,"已确认${step.post.forumName}吧帖子 ${step.post.threadId} 点赞生效；此吧今日仅处理这一帖")
     }
     private fun pending() = result(TaskStatus.PENDING,"当天所选帖子尚需执行剩余点赞步骤")
+    private fun rejectUnwrittenCandidate(error: AdapterException) = TiebaLikeCodec.explicitIdentityMismatch(error) || TiebaLikeCodec.unavailableCandidate(error)
     private fun canReplaceCandidate(step: Step, error: AdapterException) = step.stage=="selected" && step.likes==0 && step.unlikes==0 &&
-        !step.candidateRepairUsed && TiebaLikeCodec.explicitIdentityMismatch(error)
+        !step.candidateRepairUsed && rejectUnwrittenCandidate(error)
     /** One migration write only for a recorded, explicit legacy rejection, never an unknown timeout. */
     private fun canRepair(context: Context, step: Step): Boolean {
         if(step.protocol!="legacy" || step.repairUsed || !((step.stage=="like_sent" && step.likes==2) ||

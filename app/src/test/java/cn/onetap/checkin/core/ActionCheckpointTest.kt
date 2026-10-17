@@ -46,4 +46,12 @@ class ActionCheckpointTest {
             assertEquals("",Rules.safeDiagnostic(it))
         }
     }
+    @Test fun tiebaDetailDiagnosticKeepsOnlyWhitelistedPublicContext() {
+        val diagnostic="tieba endpoint=pb_page reason=thread_unavailable thread_id=123 error_code=4"
+        assertEquals(diagnostic,Rules.safeDiagnostic(diagnostic))
+        listOf("tieba endpoint=pb_page reason=private-value thread_id=123 error_code=4",
+            diagnostic+" fixture-sensitive-value",diagnostic.replace("thread_id=123","owner_uid=123")).forEach {
+            assertEquals("error_code=4",Rules.safeDiagnostic(it))
+        }
+    }
 }

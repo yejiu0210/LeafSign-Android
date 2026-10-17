@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.login.OfficialLoginPolicyTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:08:48.627Z" hostname="PC-20260405TBKV" time="0.015">
+<testsuite name="cn.onetap.checkin.login.OfficialLoginPolicyTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:27:57.821Z" hostname="PC-20260405TBKV" time="0.007">
   <properties/>
-  <testcase name="mainFrameRejectsOtherPlatformAndLookalikeDomains" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.003"/>
-  <testcase name="tokenBodyIsReadOnlyFromExactOfficialEndpoint" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.005"/>
-  <testcase name="officialStartPagesAndMobileSklandAreAllowed" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.002"/>
+  <testcase name="heyboxStartsAtRequestedCommunityAndOfficialReturnAcceptsApexWithoutBroadeningHosts" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.005"/>
+  <testcase name="mainFrameRejectsOtherPlatformAndLookalikeDomains" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.0"/>
+  <testcase name="tokenBodyIsReadOnlyFromExactOfficialEndpoint" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.001"/>
+  <testcase name="officialStartPagesAndMobileSklandAreAllowed" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.0"/>
   <testcase name="heyboxSessionSnapshotOnlyReadsTrustedOfficialPages" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.0"/>
   <testcase name="onlySubframesMayInitializeWithExactAboutBlank" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.0"/>
-  <testcase name="heyboxMobileLoginAndOfficialReturnAcceptApexWithoutBroadeningHosts" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.002"/>
   <testcase name="sdkIsInvokedOnlyInsideOfficialHypergryphAccountPage" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.0"/>
-  <testcase name="transportRejectsCleartextCustomSchemesPortsAndCredentials" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.001"/>
+  <testcase name="transportRejectsCleartextCustomSchemesPortsAndCredentials" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

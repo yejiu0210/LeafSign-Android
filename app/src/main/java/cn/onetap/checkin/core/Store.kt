@@ -90,6 +90,9 @@ object Rules {
         return state.copy(accounts = state.accounts.filterNot { it.id == account.id } + account)
     }
     fun safeDiagnostic(value: String): String {
+        val tiebaDetail = Regex("tieba endpoint=pb_page reason=(?:thread_unavailable|verification|login|other|missing) thread_id=[1-9][0-9]{0,18} error_code=(?:-?[0-9]{1,10}|missing)")
+            .matchEntire(value)?.value
+        if (tiebaDetail != null) return tiebaDetail
         val numeric = Regex("(?i)\\b(?:HTTP [1-5][0-9]{2}|(?:code|status|errno|retcode|error_code|experience\\.state)[=: ]+(?:-?[0-9]{1,10}|missing)|exception[=: ]+[A-Za-z]{1,60})\\b")
             .findAll(value).map { it.value }.toList()
         // Fixed adapter-generated reasons only; never allow arbitrary server response text.

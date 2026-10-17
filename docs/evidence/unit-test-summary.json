@@ -1,12 +1,12 @@
 {
-  "tests": 160.0,
+  "tests": 170.0,
   "failures": 0.0,
   "errors": 0.0,
   "skipped": 0.0,
   "suites": [
     {
       "name": "cn.onetap.checkin.core.ActionCheckpointTest",
-      "tests": 6,
+      "tests": 7,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -104,7 +104,7 @@
     },
     {
       "name": "cn.onetap.checkin.platform.TiebaLikeTaskTest",
-      "tests": 33,
+      "tests": 42,
       "failures": 0,
       "errors": 0,
       "skipped": 0

@@ -22,7 +22,7 @@ class WebLoginSmokeTest {
         InstrumentationRegistry.getInstrumentation().targetContext, WebLoginActivity::class.java
     ).putExtra(WebLoginActivity.EXTRA_PLATFORM, platform.name))
 
-    @Test fun heyboxHasOverviewZoomAndVisibleReturnToMobileLogin() {
+    @Test fun heyboxHasOverviewZoomAndVisibleReturnToCommunityLogin() {
         launch(Platform.HEYBOX).use { scenario ->
             val browser=awaitBrowser(scenario)
             scenario.onActivity { activity ->
@@ -31,7 +31,7 @@ class WebLoginSmokeTest {
                 assertTrue(browser.settings.builtInZoomControls)
                 assertFalse(browser.settings.displayZoomControls)
                 assertTrue(browser.settings.userAgentString.contains("Android"))
-                assertTrue(activity.window.decorView.findViewWithTag<TextView>(WebLoginActivity.RETRY_TAG).text.contains("手机版登录"))
+                assertTrue(activity.window.decorView.findViewWithTag<TextView>(WebLoginActivity.RETRY_TAG).text.contains("社区登录"))
             }
         }
     }

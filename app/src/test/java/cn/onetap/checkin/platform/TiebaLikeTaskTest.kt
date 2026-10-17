@@ -239,14 +239,111 @@ class TiebaLikeTaskTest {
         assertEquals("21",store.state.checkpoints.single().values["threadId"])
         assertFalse(api.writes.any {it["thread_id"]=="20"})
     }
-    @Test fun candidateSearchChecksAtMostThreeAndStopsOnMissingIdentityRatherThanGuessing() {
+    @Test fun exactUnavailableDetailPairSkipsOnlyTheUnwrittenCandidateAndVerifiesItsReplacement() {
+        for((code,message) in listOf(4 to "贴子可能已被删除",350008 to "该贴已被删除，请浏览其他贴子")) {
+            val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {
+                candidateThreads=listOf("20","21")
+                onRead={body,fields -> if(fields["kz"]=="20")body.put("error_code",code).put("error_msg",message).remove("thread")}
+            }
+            api.onWrite={assertEquals("21",store.state.checkpoints.single().values["threadId"])}
+            assertEquals(TaskStatus.SUCCESS,task(store,api).execute(uid,bduss,tbs,target,listOf(forum)).status)
+            assertEquals(listOf("20","21","21","21"),api.reads.map {it["kz"]})
+            assertEquals(listOf("21"),api.writes.map {it["thread_id"]})
+        }
+    }
+    @Test fun moreThanThreeUnavailableCandidatesContinueUntilOneVerifiedThreadGetsOneLike() {
+        val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {
+            candidateThreads=(20..25).map {it.toString()}
+            onRead={body,fields -> if(fields.getValue("kz").toInt()<24)
+                body.put("error_code",4).put("error_msg","贴子可能已被删除").remove("thread")}
+        }
+        api.onWrite={assertEquals("24",store.state.checkpoints.single().values["threadId"])}
+        assertEquals(TaskStatus.SUCCESS,task(store,api).execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals(listOf("20","21","22","23","24","24","24"),api.reads.map {it["kz"]})
+        assertEquals(listOf("24"),api.writes.map {it["thread_id"]})
+        assertEquals("complete",store.state.checkpoints.single().values["stage"])
+        assertEquals("1",store.state.checkpoints.single().values["likeAttempts"])
+    }
+    @Test fun unavailableCandidateSearchChecksAtMostTenWithoutSavingOrWritingRejectedThreads() {
+        val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {
+            candidateThreads=(20..31).map {it.toString()}
+            onRead={body,_ -> body.put("error_code",4).put("error_msg","贴子可能已被删除").remove("thread")}
+        }
+        expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+        assertEquals((20..29).map {it.toString()},api.reads.map {it["kz"]})
+        assertTrue(api.writes.isEmpty());assertTrue(store.state.checkpoints.isEmpty())
+    }
+    @Test fun savedUnwrittenUnavailableThreadUsesOnlyOnePersistedCandidateRepairBudget() {
+        val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(checkpoint("selected"))))
+        val api=Api().apply {
+            candidateThreads=listOf("20","21")
+            onRead={body,fields -> if(fields["kz"]=="20")body.put("error_code",4).put("error_msg","贴子可能已被删除").remove("thread")}
+            onCandidates={val saved=store.state.checkpoints.single().values
+                assertEquals("20",saved["threadId"]);assertEquals("true",saved["candidateRepairUsed"])
+                assertEquals("0",saved["likeAttempts"]);assertEquals("0",saved["unlikeAttempts"])
+            }
+        }
+        val task=task(store,api)
+        assertEquals(TaskStatus.PENDING,task.query(uid,bduss,target)?.status)
+        assertEquals(TaskStatus.SUCCESS,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals(listOf("21"),api.writes.map {it["thread_id"]})
+        assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])
+        assertEquals(TaskStatus.ALREADY,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals(1,api.writes.size)
+    }
+    @Test fun failedUnavailableRepairRemainsConsumedAfterRestart() {
+        val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(checkpoint("selected"))))
+        var searches=0
+        val api=Api().apply {
+            candidateThreads=(20..32).map {it.toString()}
+            onRead={body,_ -> body.put("error_code",4).put("error_msg","贴子可能已被删除").remove("thread")}
+            onCandidates={searches++;assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])}
+        }
+        expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+        assertEquals(1,searches);assertEquals(11,api.reads.size)
+        expectStatus(TaskStatus.UNKNOWN){task(store,api).query(uid,bduss,target)}
+        expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+        assertEquals(1,searches);assertTrue(api.writes.isEmpty())
+        assertEquals("20",store.state.checkpoints.single().values["threadId"])
+        assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])
+    }
+    @Test fun unavailableDetailAfterAnySentWriteNeverReplacesThreadOrResetsAttempts() {
+        for(prior in listOf(checkpoint("like_sent",likes=1),checkpoint("unlike_sent",unlikes=1))) {
+            val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(prior)));val api=Api().apply {
+                onRead={body,_ -> body.put("error_code",4).put("error_msg","贴子可能已被删除").remove("thread")}
+                onCandidates={fail("write-sent thread must not be replaced")}
+            }
+            expectStatus(TaskStatus.UNKNOWN){task(store,api).query(uid,bduss,target)}
+            expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+            assertEquals(prior,store.state.checkpoints.single());assertTrue(api.writes.isEmpty())
+        }
+    }
+    @Test fun codeFourWithoutExactUnavailableMessageCannotSkipOrRepairAnUnwrittenCandidate() {
+        for(message in listOf("","synthetic-secret","请求参数错误，请重试","贴子可能已被删除，请完成安全验证","请先登录")) {
+            for(existing in listOf(false,true)) {
+                val prior=checkpoint("selected")
+                val store=MemoryStore(AppState(listOf(account),checkpoints=if(existing)listOf(prior) else emptyList()))
+                var searches=0
+                val api=Api().apply {
+                    candidateThreads=listOf("20","21")
+                    onRead={body,_ -> body.put("error_code",4).put("error_msg",message).remove("thread")}
+                    onCandidates={searches++}
+                }
+                val expected=when(message) { "请先登录" -> TaskStatus.EXPIRED; "贴子可能已被删除，请完成安全验证" -> TaskStatus.MANUAL; else -> TaskStatus.UNKNOWN }
+                expectStatus(expected){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+                assertEquals(if(existing)0 else 1,searches);assertEquals(1,api.reads.size);assertTrue(api.writes.isEmpty())
+                assertEquals(if(existing)listOf(prior) else emptyList<TaskCheckpoint>(),store.state.checkpoints)
+            }
+        }
+    }
+    @Test fun candidateSearchChecksAtMostTenAndStopsOnMissingIdentityRatherThanGuessing() {
         for(missing in listOf(false,true)) {
             val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {
-                candidateThreads=listOf("20","21","22","23")
+                candidateThreads=(20..31).map {it.toString()}
                 onRead={body,_ -> if(missing)body.remove("forum") else body.getJSONObject("forum").put("id",11)}
             }
             expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
-            assertEquals(if(missing)1 else 3,api.reads.size)
+            assertEquals(if(missing)1 else 10,api.reads.size)
             assertTrue(api.writes.isEmpty());assertTrue(store.state.checkpoints.isEmpty())
         }
     }
@@ -283,14 +380,14 @@ class TiebaLikeTaskTest {
         val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(checkpoint("selected"))))
         var searches=0
         val api=Api().apply {
-            candidateThreads=listOf("20","21","22","23","24")
+            candidateThreads=(20..32).map {it.toString()}
             onRead={body,_ -> body.getJSONObject("forum").put("id",11)}
             onCandidates={searches++;assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])}
         }
         expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
         assertEquals(1,searches);assertEquals("20",store.state.checkpoints.single().values["threadId"])
         assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])
-        assertEquals(4,api.reads.size)
+        assertEquals(11,api.reads.size)
         expectStatus(TaskStatus.UNKNOWN){task(store,api).query(uid,bduss,target)}
         expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
         assertEquals(1,searches);assertTrue(api.writes.isEmpty())
@@ -433,5 +530,38 @@ class TiebaLikeTaskTest {
         expectStatus(TaskStatus.UNKNOWN){TiebaLikeCodec.liked(body,uid,post)}
         body.getJSONObject("user").put("is_login",0)
         expectStatus(TaskStatus.EXPIRED){TiebaLikeCodec.liked(body,uid,post)}
+    }
+    @Test fun detailFailureDiagnosticsIncludeOnlyPublicThreadAndFixedReasonCategory() {
+        val post=TiebaLikeCodec.Post("20","10","测试")
+        for((code,message,reason,status) in listOf(
+            listOf(4,"贴子可能已被删除","thread_unavailable",TaskStatus.UNKNOWN),
+            listOf("4","贴子可能已被删除","thread_unavailable",TaskStatus.UNKNOWN),
+            listOf(350008,"该贴已被删除，请浏览其他贴子","thread_unavailable",TaskStatus.UNKNOWN),
+            listOf(4,"请先登录","login",TaskStatus.EXPIRED),
+            listOf(4,"请完成安全验证","verification",TaskStatus.MANUAL),
+            listOf(4,"synthetic-secret","other",TaskStatus.UNKNOWN),
+            listOf(4,"","missing",TaskStatus.UNKNOWN))) {
+            try {TiebaLikeCodec.liked(JSONObject().put("error_code",code).put("error_msg",message).put("BDUSS","synthetic-secret"),uid,post);fail("error expected")}
+            catch(e:AdapterException) {
+                assertEquals(status,e.status)
+                assertEquals("tieba endpoint=pb_page reason=$reason thread_id=20 error_code=$code",e.diagnostic)
+                assertEquals(reason=="thread_unavailable",TiebaLikeCodec.unavailableCandidate(e))
+                assertFalse(e.message.contains("synthetic-secret"));assertFalse(e.diagnostic.contains("synthetic-secret"))
+            }
+        }
+    }
+    @Test fun unavailablePairIsDetailOnlyAndMalformedCodesNeverAuthorizeCandidateReplacement() {
+        val post=TiebaLikeCodec.Post("20","10","测试")
+        for(code in listOf<Any>(4.0,true,JSONObject.NULL,"invalid")) {
+            val body=JSONObject().put("error_code",code).put("error_msg","贴子可能已被删除")
+            try {TiebaLikeCodec.liked(body,uid,post);fail("error expected")}catch(e:AdapterException) {
+                assertEquals(TaskStatus.UNKNOWN,e.status)
+                assertFalse(TiebaLikeCodec.unavailableCandidate(e))
+            }
+        }
+        for(action in listOf("读取候选帖子","点赞","取消点赞")) {
+            try {TiebaLikeCodec.requireSuccess(JSONObject().put("error_code",4).put("error_msg","贴子可能已被删除"),action);fail("error expected")}
+            catch(e:AdapterException) {assertEquals("tieba error_code=4",e.diagnostic);assertFalse(TiebaLikeCodec.unavailableCandidate(e))}
+        }
     }
 }

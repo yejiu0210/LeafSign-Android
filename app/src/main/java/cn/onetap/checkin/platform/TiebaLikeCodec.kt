@@ -34,6 +34,29 @@ internal object TiebaLikeCodec {
             ?: return false
         return match.groupValues[1] != match.groupValues[2]
     }
+    /** Paired code/message is checked only for pb detail reads, never for writes or list reads. */
+    private fun requireDetailSuccess(body: JSONObject, post: Post) {
+        val code=number(body.opt("error_code"))
+        if(code==0L) return
+        val rawMessage=body.opt("error_msg") as? String
+        val message=rawMessage?.trim().orEmpty()
+        val unavailable=(code==4L && message=="贴子可能已被删除") ||
+            (code==350008L && message=="该贴已被删除，请浏览其他贴子")
+        try { requireSuccess(body,"读取点赞状态") } catch(error: AdapterException) {
+            val reason=when {
+                error.status==TaskStatus.MANUAL -> "verification"
+                error.status==TaskStatus.EXPIRED -> "login"
+                unavailable -> "thread_unavailable"
+                message.isEmpty() -> "missing"
+                else -> "other"
+            }
+            throw AdapterException(error.status,if(unavailable) "所选帖子暂不可用（官方提示可能已被删除），未继续操作" else error.message,
+                "tieba endpoint=pb_page reason=$reason thread_id=${post.threadId} error_code=${code ?: "missing"}")
+        }
+    }
+    fun unavailableCandidate(error: AdapterException): Boolean = error.status==TaskStatus.UNKNOWN &&
+        Regex("tieba endpoint=pb_page reason=thread_unavailable thread_id=[1-9][0-9]{0,18} error_code=(?:4|350008)")
+            .matches(error.diagnostic)
     fun requireSuccess(body: JSONObject, action: String) {
         val code = number(body.opt("error_code"))
         if (code == 0L) return
@@ -76,7 +99,7 @@ internal object TiebaLikeCodec {
     }
     /** Never infer personal state from aggregate agree_num, anonymous pages, or first-floor votes. */
     fun liked(body: JSONObject, owner: String, post: Post): Boolean {
-        requireSuccess(body, "读取点赞状态")
+        requireDetailSuccess(body, post)
         checkUser(body, owner)
         val thread = body.optJSONObject("thread")
         if (positive(thread?.opt("id")) != post.threadId)

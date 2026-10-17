@@ -2,6 +2,7 @@ package cn.onetap.checkin.login
 
 import cn.onetap.checkin.core.Platform
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -17,8 +18,8 @@ class OfficialLoginPolicyTest {
         }
         assertFalse(OfficialLoginPolicy.allowed(Platform.SKLAND, "https://music.163.com/"))
     }
-    @Test fun heyboxMobileLoginAndOfficialReturnAcceptApexWithoutBroadeningHosts() {
-        assertTrue(OfficialLoginPolicy.startUrl(Platform.HEYBOX).contains("force_relogin=true"))
+    @Test fun heyboxStartsAtRequestedCommunityAndOfficialReturnAcceptsApexWithoutBroadeningHosts() {
+        assertEquals("https://xiaoheihe.cn/app/bbs/home",OfficialLoginPolicy.startUrl(Platform.HEYBOX))
         listOf("https://xiaoheihe.cn/app/bbs/home", "https://www.xiaoheihe.cn/", "https://www.xiaoheihe.cn/app/bbs/home/").forEach {
             assertTrue(OfficialLoginPolicy.allowed(Platform.HEYBOX,it))
             assertTrue(OfficialLoginPolicy.isHeyboxLoginReturn(it))
