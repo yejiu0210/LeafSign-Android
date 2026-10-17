@@ -1,8 +1,8 @@
 {
-  "file": "OneTapCheckIn-0.4.3-test.apk",
-  "bytes": 7877763,
-  "sha256": "7a32df997359dfc564dff7c10263fbcc42ac0f15e635c4c384fcc6c588a11faa",
-  "tests": 170.0,
+  "file": "OneTapCheckIn-0.4.4-test.apk",
+  "bytes": 7861379,
+  "sha256": "c587e87a496a40bef7573b0dcfe4a4d718e6af7aaf85eab7468539bb61eba272",
+  "tests": 148.0,
   "lintErrors": 0,
   "lintWarnings": 19
 }

@@ -27,7 +27,6 @@ import cn.onetap.checkin.CheckInApp
 import cn.onetap.checkin.core.AdapterException
 import cn.onetap.checkin.core.Platform
 import cn.onetap.checkin.core.TaskStatus
-import cn.onetap.checkin.core.Rules
 import cn.onetap.checkin.theme.ThemePalette
 import kotlinx.coroutines.*
 import org.json.JSONObject
@@ -70,7 +69,6 @@ class WebLoginActivity : ComponentActivity() {
     private var sessionTimeout: Job? = null
     private var validationJob: Job? = null
     private var sklandProbeJob: Job? = null
-    private var heyboxProbeJob: Job? = null
     private var sessionGeneration = 0
     private var navigationGeneration = 0
     private var failedNavigation = false
@@ -126,7 +124,7 @@ class WebLoginActivity : ComponentActivity() {
         root.addView(progressBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)))
         val actions = LinearLayout(this)
         detectButton = Button(this).apply { text = "登录完成，检测账号"; textSize = 12f; setOnClickListener { detect(manual = true) } }
-        retryButton = Button(this).apply { text = if(platform==Platform.HEYBOX) "重新打开社区登录" else "重新加载官网"; tag = RETRY_TAG; textSize = 12f; setOnClickListener { retryLogin() } }
+        retryButton = Button(this).apply { text = "重新加载官网"; tag = RETRY_TAG; textSize = 12f; setOnClickListener { retryLogin() } }
         styleButton(detectButton); styleButton(retryButton)
         actions.addView(detectButton, LinearLayout.LayoutParams(0, dp(52), 1.2f))
         actions.addView(retryButton, LinearLayout.LayoutParams(0, dp(52), 1f)); root.addView(actions)
@@ -168,7 +166,7 @@ class WebLoginActivity : ComponentActivity() {
 
     private fun beginFreshSession() {
         if (closing) return
-        validationJob?.cancel(); sklandProbeJob?.cancel(); heyboxProbeJob?.cancel()
+        validationJob?.cancel(); sklandProbeJob?.cancel()
         val generation = ++sessionGeneration
         preparing = true; checking = false; loading = false; hidePage = false; cleaned = false
         disposeBrowser(); placeholder.text = "正在准备独立登录会话…"; placeholder.visibility = View.VISIBLE
@@ -220,9 +218,7 @@ class WebLoginActivity : ComponentActivity() {
                 if (platform == Platform.NETEASE) userAgentString = userAgentString
                     .replace(Regex("\\([^)]*Android[^)]*\\)"), "(X11; Linux x86_64)")
                     .replace(" Version/4.0", "").replace(" Mobile", "")
-                // The requested Heybox community entry has a fixed desktop login dialog.
-                // Overview and pinch zoom keep the full form and agreement within reach.
-                if (platform == Platform.NETEASE || platform == Platform.HEYBOX) {
+                if (platform == Platform.NETEASE) {
                     useWideViewPort = true; loadWithOverviewMode = true
                     setSupportZoom(true)
                     builtInZoomControls = true; displayZoomControls = false
@@ -279,7 +275,7 @@ class WebLoginActivity : ComponentActivity() {
             } else if (allowedNavigation(uri)) {
                 if (!checking) {
                     revealPage()
-                    showStatus(if(platform==Platform.HEYBOX) "请点击官方社区的“登录”，完成后自动导入。可双指缩放查看完整弹窗；协议请本人勾选。" else "请在官网完成登录。登录后自动校验，也可点击“登录完成，检测账号”。")
+                    showStatus("请在官网完成登录。登录后自动校验，也可点击“登录完成，检测账号”。")
                     detect(manual = false); inspectEmptyPage(view, navigationGeneration)
                 }
             }
@@ -309,7 +305,7 @@ class WebLoginActivity : ComponentActivity() {
         }
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail?): Boolean {
             if (view === page) {
-                pageTimeout?.cancel(); checking = false; loading = false; validationJob?.cancel(); sklandProbeJob?.cancel(); heyboxProbeJob?.cancel()
+                pageTimeout?.cancel(); checking = false; loading = false; validationJob?.cancel(); sklandProbeJob?.cancel()
                 disposeBrowser(rendererGone = true); placeholder.visibility = View.VISIBLE
                 placeholder.text = "网页渲染进程已退出，可以重新加载官网恢复。"
                 showStatus("系统 WebView 渲染进程退出。请重新加载；若重复出现，请更新 WebView / Chrome。")
@@ -353,21 +349,17 @@ class WebLoginActivity : ComponentActivity() {
     }
 
     private fun cookieCredential(): String? {
-        // Heybox uses a live single-page snapshot instead of merging independent host jars.
-        if (platform == Platform.HEYBOX) return null
         val urls = when (platform) {
             Platform.NETEASE -> listOf("https://music.163.com/")
             Platform.TIEBA -> listOf("https://tieba.baidu.com/")
             Platform.BILIBILI -> listOf("https://api.bilibili.com/", "https://www.bilibili.com/")
             Platform.SKLAND -> listOf("https://www.skland.com/", "https://m.skland.com/")
-            Platform.HEYBOX -> emptyList()
         }
         val allowed = when (platform) {
             Platform.NETEASE -> setOf("MUSIC_U", "__csrf")
             Platform.TIEBA -> setOf("BDUSS", "STOKEN")
             Platform.BILIBILI -> setOf("SESSDATA", "bili_jct", "buvid3", "DedeUserID", "DedeUserID__ckMd5", "bili_ticket", "bili_ticket_expires")
             Platform.SKLAND -> setOf("SK_OAUTH_CRED_KEY")
-            Platform.HEYBOX -> setOf("pkey", "user_pkey", "heybox_id", "user_heybox_id", "x_xhh_tokenid")
         }
         val cookies = linkedMapOf<String, String>()
         urls.forEach { url -> CookieManager.getInstance().getCookie(url).orEmpty().split(';').forEach { raw ->
@@ -379,7 +371,6 @@ class WebLoginActivity : ComponentActivity() {
             Platform.TIEBA -> setOf("BDUSS")
             Platform.BILIBILI -> setOf("SESSDATA", "bili_jct")
             Platform.SKLAND -> setOf("SK_OAUTH_CRED_KEY")
-            Platform.HEYBOX -> emptySet()
         }
         val complete=required.all {it in cookies}
         return if (complete) cookies.entries.joinToString("; ") { "${it.key}=${it.value}" } else null
@@ -387,11 +378,6 @@ class WebLoginActivity : ComponentActivity() {
     private fun detect(manual: Boolean) {
         val browser = page ?: return
         if (preparing || closing || checking || hidePage || loading || failedNavigation || (!manual && autoChecks >= 3)) return
-        if (platform == Platform.HEYBOX) {
-            // A complete Cookie snapshot is required before any identity request.
-            if (!manual && !OfficialLoginPolicy.isHeyboxLoginReturn(browser.url.orEmpty())) return
-            probeHeyboxSession(browser, manual); return
-        }
         if (platform == Platform.SKLAND && OfficialLoginPolicy.isHypergryphAccount(browser.url.orEmpty())) {
             // The current official portal routes a completed, agreed login to /userInfo. Do not
             // hide a user's SMS form every three seconds while /login is still being completed.
@@ -412,48 +398,6 @@ class WebLoginActivity : ComponentActivity() {
         val fingerprint = MessageDigest.getInstance("SHA-256").digest(credential.toByteArray()).joinToString("") { "%02x".format(it) }
         if (fingerprint == lastAutoFingerprint) return false
         lastAutoFingerprint = fingerprint; autoChecks++; return true
-    }
-
-    private fun probeHeyboxSession(browser: WebView, manual: Boolean) {
-        if (heyboxProbeJob?.isActive == true || !OfficialLoginPolicy.canReadHeyboxSession(browser.url.orEmpty())) return
-        val generation=sessionGeneration
-        // Quiet polling must leave the community's login dialog visible and usable.
-        if (manual) {
-            checking=true
-            concealPage("正在接收本次小黑盒官网登录会话…")
-            showStatus("正在接收本次小黑盒官网登录会话…")
-        }
-        heyboxProbeJob=lifecycleScope.launch {
-            var validating=false
-            try {
-                val credential=withTimeout(8_000) {
-                    repeat(if(manual) 6 else 1) {
-                        if(manual) delay(200)
-                        if (closing || generation!=sessionGeneration || page!==browser ||
-                            !OfficialLoginPolicy.canReadHeyboxSession(browser.url.orEmpty())) return@withTimeout null
-                        val raw=evaluate(browser, HeyboxLoginCookies.SNAPSHOT_SCRIPT)
-                        if (closing || generation!=sessionGeneration || page!==browser ||
-                            !OfficialLoginPolicy.canReadHeyboxSession(browser.url.orEmpty())) return@withTimeout null
-                        val snapshot=try { JSONTokener(raw).nextValue() as? String } catch (_: Exception) { null }
-                        val candidate=HeyboxLoginCookies.credential(snapshot)
-                        if (candidate!=null) return@withTimeout candidate
-                    }
-                    null
-                }
-                if (credential!=null) {
-                    if (manual || newAutoCredential(credential)) { validating=true; validateCredential(credential) }
-                } else if (manual) showStatus("尚未取得完整的小黑盒登录会话。请在官方社区完成登录和验证后，再点“登录完成，检测账号”。")
-            } catch (_: TimeoutCancellationException) {
-                if (manual && !closing) showStatus("小黑盒网页登录会话读取超时，尚未保存账号。请重新检测或加载官方社区。")
-            } catch (e: CancellationException) { throw e }
-            catch (_: Exception) {
-                if (manual && !closing) showStatus("小黑盒官方页面暂时无法读取登录会话，请完成登录后重新检测。")
-            } finally {
-                if (!validating && !closing && generation==sessionGeneration && page===browser) {
-                    checking=false; revealPage(); updateControls()
-                }
-            }
-        }
     }
 
     /** Official user-center index.62f8883d.js uses HG_SDK.User.getToken(), result and data.token. */
@@ -543,10 +487,7 @@ class WebLoginActivity : ComponentActivity() {
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 val adapterError=e as? AdapterException
-                if (!closing) validationFailed(if (platform==Platform.HEYBOX && adapterError!=null) {
-                    val diagnostic=Rules.safeDiagnostic(adapterError.diagnostic)
-                    adapterError.message + if(diagnostic.isNotBlank()) "\n诊断：$diagnostic" else ""
-                } else when (adapterError?.status) {
+                if (!closing) validationFailed(when (adapterError?.status) {
                     TaskStatus.EXPIRED -> "网页登录授权未生效或已过期，请完成官方登录后重试。"
                     TaskStatus.MANUAL -> "平台要求手动验证，请在官网完成验证码或安全检查后重试。"
                     else -> "官方身份校验未通过，请检查网络并完成网页登录后重试。"
@@ -565,7 +506,7 @@ class WebLoginActivity : ComponentActivity() {
     }
     private fun loadLoginPage() {
         val browser = page ?: return
-        pageTimeout?.cancel(); sklandProbeJob?.cancel(); heyboxProbeJob?.cancel(); browser.stopLoading()
+        pageTimeout?.cancel(); sklandProbeJob?.cancel(); browser.stopLoading()
         checking = false; loading = true; failedNavigation = false; autoChecks = 0; lastAutoFingerprint = ""
         concealPage("正在加载官方登录页…"); showStatus("正在加载官网，请稍候。加载异常会在上方显示原因。")
         armPageTimeout(); browser.loadUrl(OfficialLoginPolicy.startUrl(platform))
@@ -573,7 +514,7 @@ class WebLoginActivity : ComponentActivity() {
     private fun closeSession(credential: String?) {
         if (closing) return
         closing = true; val generation = ++sessionGeneration
-        pageTimeout?.cancel(); sessionTimeout?.cancel(); sklandProbeJob?.cancel(); heyboxProbeJob?.cancel()
+        pageTimeout?.cancel(); sessionTimeout?.cancel(); sklandProbeJob?.cancel()
         checking = false; preparing = false; loading = false
         showStatus("正在清理网页登录会话…"); disposeBrowser()
         placeholder.visibility = View.VISIBLE; placeholder.text = "正在清理本次网页登录会话…"
@@ -605,7 +546,7 @@ class WebLoginActivity : ComponentActivity() {
         }
     }
     override fun onDestroy() {
-        pageTimeout?.cancel(); sessionTimeout?.cancel(); sklandProbeJob?.cancel(); heyboxProbeJob?.cancel(); disposeBrowser()
+        pageTimeout?.cancel(); sessionTimeout?.cancel(); sklandProbeJob?.cancel(); disposeBrowser()
         // Do not race a new Activity with a late asynchronous cookie clear after recreation.
         if (!cleaned) try { WebStorage.getInstance().deleteAllData() } catch (_: Exception) { }
         super.onDestroy()

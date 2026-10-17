@@ -2,7 +2,6 @@ package cn.onetap.checkin.login
 
 import cn.onetap.checkin.core.Platform
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -18,31 +17,11 @@ class OfficialLoginPolicyTest {
         }
         assertFalse(OfficialLoginPolicy.allowed(Platform.SKLAND, "https://music.163.com/"))
     }
-    @Test fun heyboxStartsAtRequestedCommunityAndOfficialReturnAcceptsApexWithoutBroadeningHosts() {
-        assertEquals("https://xiaoheihe.cn/app/bbs/home",OfficialLoginPolicy.startUrl(Platform.HEYBOX))
-        listOf("https://xiaoheihe.cn/app/bbs/home", "https://www.xiaoheihe.cn/", "https://www.xiaoheihe.cn/app/bbs/home/").forEach {
-            assertTrue(OfficialLoginPolicy.allowed(Platform.HEYBOX,it))
-            assertTrue(OfficialLoginPolicy.isHeyboxLoginReturn(it))
-        }
-        listOf("http://xiaoheihe.cn/app/bbs/home", "https://xiaoheihe.cn.evil.test/app/bbs/home", "https://user:secret@xiaoheihe.cn/app/bbs/home", "https://xiaoheihe.cn:444/app/bbs/home", "https://login.xiaoheihe.cn/", "https://xiaoheihe.cn/unverified-callback").forEach {
-            assertFalse(OfficialLoginPolicy.isHeyboxLoginReturn(it))
-        }
-        assertFalse(OfficialLoginPolicy.allowed(Platform.TIEBA,"https://xiaoheihe.cn/app/bbs/home"))
-    }
     @Test fun transportRejectsCleartextCustomSchemesPortsAndCredentials() {
         listOf("http://music.163.com/", "orpheus://login", "intent://login", "file:///data/data/test", "https://music.163.com:444/", "https://user:secret@music.163.com/", "https://music.163.com\\@evil.test/").forEach {
             assertFalse(it, OfficialLoginPolicy.allowed(Platform.NETEASE, it))
         }
         assertTrue(OfficialLoginPolicy.allowed(Platform.NETEASE, "https://music.163.com:443/"))
-    }
-    @Test fun heyboxSessionSnapshotOnlyReadsTrustedOfficialPages() {
-        listOf("https://login.xiaoheihe.cn/", "https://xiaoheihe.cn/app/bbs/home", "https://www.xiaoheihe.cn/").forEach {
-            assertTrue(OfficialLoginPolicy.canReadHeyboxSession(it))
-        }
-        listOf("https://api.xiaoheihe.cn/", "http://login.xiaoheihe.cn/", "https://login.xiaoheihe.cn.evil.test/",
-            "https://user:secret@login.xiaoheihe.cn/", "https://login.xiaoheihe.cn:444/", "about:blank").forEach {
-            assertFalse(OfficialLoginPolicy.canReadHeyboxSession(it))
-        }
     }
     @Test fun tokenBodyIsReadOnlyFromExactOfficialEndpoint() {
         assertTrue(OfficialLoginPolicy.isSklandToken("https://web-api.skland.com/account/info/hg"))

@@ -1,0 +1,13 @@
+{
+  "checkedMarkers": [
+    "xiaoheihe.cn",
+    "cn/onetap/checkin/platform/HeyboxAdapter",
+    "cn/onetap/checkin/platform/HeyboxWebSigning",
+    "cn/onetap/checkin/login/HeyboxLoginCookies",
+    "小黑盒"
+  ],
+  "forbiddenMarkerHits": [],
+  "passed": true,
+  "legacyStateMarkersRetainedForMigration": true,
+  "check": "release DEX only; not device execution"
+}

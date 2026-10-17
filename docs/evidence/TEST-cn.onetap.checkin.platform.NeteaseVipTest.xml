@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.platform.NeteaseVipTest" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:27:58.597Z" hostname="PC-20260405TBKV" time="0.144">
+<testsuite name="cn.onetap.checkin.platform.NeteaseVipTest" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:50:13.189Z" hostname="PC-20260405TBKV" time="0.152">
   <properties/>
-  <testcase name="identityOwnershipAndLegacyTargetCannotCrossExecute" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.023"/>
-  <testcase name="queryOnlyReadsStateAndNeverCallsDetailOrTaskSign" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.011"/>
+  <testcase name="identityOwnershipAndLegacyTargetCannotCrossExecute" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.005"/>
+  <testcase name="queryOnlyReadsStateAndNeverCallsDetailOrTaskSign" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.004"/>
   <testcase name="onlyExplicitServerTodayAndBooleanSignDetermineCompletion" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.004"/>
-  <testcase name="expiredOrManualResultStopsLaterSteps" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.014"/>
-  <testcase name="validationDiscoversOnlyVipMusicSignWithoutRequiringPaidVip" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.006"/>
-  <testcase name="musicSignUsesTwoRequiredStepsAndVerifiesServerState" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.012"/>
-  <testcase name="alreadySignedDoesNotSendEitherWriteStep" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.011"/>
-  <testcase name="missingStatusStopsWritesRatherThanGuessingPending" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.009"/>
-  <testcase name="eapiMatchesIndependentDotNetMd5AndAesVector" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.007"/>
-  <testcase name="timedOutWriteIsNotConvertedToSuccessOrRepeatedInsideAdapter" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.011"/>
+  <testcase name="expiredOrManualResultStopsLaterSteps" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.086"/>
+  <testcase name="validationDiscoversOnlyVipMusicSignWithoutRequiringPaidVip" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.008"/>
+  <testcase name="musicSignUsesTwoRequiredStepsAndVerifiesServerState" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.01"/>
+  <testcase name="alreadySignedDoesNotSendEitherWriteStep" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.003"/>
+  <testcase name="missingStatusStopsWritesRatherThanGuessingPending" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.001"/>
+  <testcase name="eapiMatchesIndependentDotNetMd5AndAesVector" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.013"/>
+  <testcase name="timedOutWriteIsNotConvertedToSuccessOrRepeatedInsideAdapter" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.002"/>
   <testcase name="eapiHeaderCookieUsesUpstreamPercentEncoding" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.005"/>
-  <testcase name="allWriteCodes200StillNeedExplicitConfirmedTodaySign" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.003"/>
-  <testcase name="unknownDetailCannotClaimThisRequestSucceededEvenWhenTodayIsConfirmed" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.003"/>
+  <testcase name="allWriteCodes200StillNeedExplicitConfirmedTodaySign" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.005"/>
+  <testcase name="unknownDetailCannotClaimThisRequestSucceededEvenWhenTodayIsConfirmed" classname="cn.onetap.checkin.platform.NeteaseVipTest" time="0.002"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

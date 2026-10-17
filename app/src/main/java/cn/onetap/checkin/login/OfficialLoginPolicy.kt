@@ -10,14 +10,12 @@ internal object OfficialLoginPolicy {
         Platform.TIEBA -> "https://tieba.baidu.com/"
         Platform.SKLAND -> "https://user.hypergryph.com/login"
         Platform.BILIBILI -> "https://passport.bilibili.com/login"
-        Platform.HEYBOX -> "https://xiaoheihe.cn/app/bbs/home"
     }
     private fun hosts(platform: Platform): Set<String> = when (platform) {
         Platform.NETEASE -> setOf("music.163.com", "y.music.163.com", "st.music.163.com", "reg.163.com", "dl.reg.163.com", "passport.163.com")
         Platform.TIEBA -> setOf("tieba.baidu.com", "wappass.baidu.com", "passport.baidu.com", "wappass.bdimg.com")
         Platform.SKLAND -> setOf("www.skland.com", "m.skland.com", "web-api.skland.com", "user.hypergryph.com", "as.hypergryph.com")
         Platform.BILIBILI -> setOf("passport.bilibili.com", "www.bilibili.com", "m.bilibili.com", "big.bilibili.com", "api.bilibili.com")
-        Platform.HEYBOX -> setOf("xiaoheihe.cn", "www.xiaoheihe.cn", "login.xiaoheihe.cn", "api.xiaoheihe.cn")
     }
     private fun parse(url: String): URI? = try { URI(url) } catch (_: Exception) { null }
     private fun secure(uri: URI) = uri.scheme == "https" && uri.host != null &&
@@ -27,12 +25,6 @@ internal object OfficialLoginPolicy {
     fun allowedSubframe(url: String): Boolean = url == "about:blank" || secure(url)
     fun allowed(platform: Platform, url: String): Boolean = parse(url)?.let { secure(it) && it.host in hosts(platform) } == true
     fun isHypergryphAccount(url: String): Boolean = parse(url)?.let { secure(it) && it.host == "user.hypergryph.com" } == true
-    fun isHeyboxLoginReturn(url: String): Boolean = parse(url)?.let {
-        secure(it) && it.host in setOf("xiaoheihe.cn", "www.xiaoheihe.cn") && it.path in setOf("", "/", "/app/bbs/home", "/app/bbs/home/")
-    } == true
-    fun canReadHeyboxSession(url: String): Boolean = parse(url)?.let {
-        secure(it) && it.host in setOf("login.xiaoheihe.cn", "xiaoheihe.cn", "www.xiaoheihe.cn")
-    } == true
     fun isSklandSensitivePage(url: String): Boolean = parse(url)?.let {
         secure(it) && it.host == "web-api.skland.com" && it.path.trimEnd('/') == "/account/info/hg"
     } == true

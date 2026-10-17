@@ -95,15 +95,10 @@ object Rules {
         if (tiebaDetail != null) return tiebaDetail
         val numeric = Regex("(?i)\\b(?:HTTP [1-5][0-9]{2}|(?:code|status|errno|retcode|error_code|experience\\.state)[=: ]+(?:-?[0-9]{1,10}|missing)|exception[=: ]+[A-Za-z]{1,60})\\b")
             .findAll(value).map { it.value }.toList()
-        // Fixed adapter-generated reasons only; never allow arbitrary server response text.
-        val reasons = setOf("identity missing result", "identity missing server uid", "identity conflicting server uid",
-            "identity missing server session", "missing task_list", "invalid task group", "invalid task object",
-            "missing or ambiguous sign task", "unrecognized sign state", "unrecognized business status",
-            "auth required", "manual verification required", "invalid cookie", "identity cookie mismatch").map { "heybox $it" }
         // Only public thread/forum identifiers; account IDs and server text are excluded.
         val tiebaIdentity = Regex("tieba field=(?:thread_id|forum_id|redundant_fid) expected=[1-9][0-9]{0,18} actual=(?:[1-9][0-9]{0,18}|missing|zero|invalid)")
             .matchEntire(value)?.value
-        return (numeric+reasons.filter { it==value }+listOfNotNull(tiebaIdentity)).distinct().joinToString("; ").take(240)
+        return (numeric+listOfNotNull(tiebaIdentity)).distinct().joinToString("; ").take(240)
     }
     fun resultTitle(status: TaskStatus, targetId: String): String = if(targetId.startsWith("tieba:like:")) when(status) {
         TaskStatus.SUCCESS -> "点赞完成"
@@ -144,17 +139,29 @@ class Store(context: Context) : StateStore {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(1,13)))
         cipher.updateAAD("OneTapCheckIn.v1".toByteArray())
-        return decode(JSONObject(String(cipher.doFinal(bytes.copyOfRange(13,bytes.size)), Charsets.UTF_8)))
+        val decoded = StateJson.decode(JSONObject(String(cipher.doFinal(bytes.copyOfRange(13,bytes.size)), Charsets.UTF_8)))
+        // Persist retirement immediately, using the original retained JSON to preserve all other data.
+        decoded.migratedRoot?.let(::writeRoot)
+        return decoded.state
     }
     @Synchronized override fun update(change: (AppState) -> AppState): AppState {
         val state = change(read())
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()); updateAAD("OneTapCheckIn.v1".toByteArray()) }
-        val bytes = byteArrayOf(1) + cipher.iv + cipher.doFinal(encode(state).toString().toByteArray(Charsets.UTF_8))
-        val stream = file.startWrite()
-        try { stream.write(bytes); file.finishWrite(stream) } catch (e: Exception) { file.failWrite(stream); throw e }
+        writeRoot(StateJson.encode(state))
         return state
     }
-    private fun encode(state: AppState) = JSONObject().apply {
+    private fun writeRoot(root: JSONObject) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()); updateAAD("OneTapCheckIn.v1".toByteArray()) }
+        val bytes = byteArrayOf(1) + cipher.iv + cipher.doFinal(root.toString().toByteArray(Charsets.UTF_8))
+        val stream = file.startWrite()
+        try { stream.write(bytes); file.finishWrite(stream) } catch (e: Exception) { file.failWrite(stream); throw e }
+    }
+}
+
+/** JSON migration runs before enum decoding so removed platforms remain safe to upgrade from. */
+internal object StateJson {
+    data class Decoded(val state: AppState, val migratedRoot: JSONObject?)
+
+    fun encode(state: AppState) = JSONObject().apply {
         put("accounts", JSONArray().apply { state.accounts.forEach { a -> put(JSONObject().apply {
             put("id",a.id);put("platform",a.platform.name);put("userId",a.userId);put("name",a.displayName);put("note",a.note);put("credential",a.credential);put("details",a.details);put("checkedAt",a.checkedAt)
             put("enabled",JSONArray(a.enabled.toList()));put("targets",JSONArray().apply { a.targets.forEach { t -> put(JSONObject().apply {
@@ -167,7 +174,9 @@ class Store(context: Context) : StateStore {
         put("settings",SettingsJson.encode(state.settings))
         put("checkpoints",CheckpointsJson.encode(state.checkpoints))
     }
-    private fun decode(root: JSONObject): AppState {
+    fun decode(saved: JSONObject): Decoded {
+        val migrated = retireHeybox(saved)
+        val root = migrated ?: saved
         fun objects(array: JSONArray) = (0 until array.length()).map { array.getJSONObject(it) }
         val accounts = objects(root.optJSONArray("accounts") ?: JSONArray()).map { a ->
             val targets = objects(a.getJSONArray("targets")).map { t ->
@@ -180,6 +189,28 @@ class Store(context: Context) : StateStore {
         val records = objects(root.optJSONArray("records") ?: JSONArray()).map { r -> Record(r.getString("id"),r.getString("accountId"),Platform.valueOf(r.getString("platform")),r.getString("accountLabel"),r.getString("targetId"),r.getString("task"),r.getString("period"),r.getLong("time"),TaskStatus.valueOf(r.getString("status")),r.getString("message"),r.optString("diagnostic"),r.optString("experienceState")) }
         val s = root.optJSONObject("settings") ?: JSONObject()
         val checkpoints=CheckpointsJson.decode(root.optJSONArray("checkpoints"))
-        return AppState(accounts, records, SettingsJson.decode(s),checkpoints)
+        return Decoded(AppState(accounts, records, SettingsJson.decode(s),checkpoints), migrated)
+    }
+
+    private fun retireHeybox(saved: JSONObject): JSONObject? {
+        fun objects(key: String) = saved.optJSONArray(key)?.let { items ->
+            (0 until items.length()).map { items.getJSONObject(it) }
+        }.orEmpty()
+        val accounts = objects("accounts")
+        val retiredAccounts = accounts.filter { it.optString("platform") == "HEYBOX" }
+        val retiredIds = retiredAccounts.mapNotNull { (it.opt("id") as? String)?.takeIf(String::isNotEmpty) }.toSet()
+        fun retiredRow(row: JSONObject) = row.optString("platform") == "HEYBOX" ||
+            row.optString("accountId") in retiredIds || row.optString("targetId").startsWith("heybox:")
+        val records = objects("records")
+        val checkpoints = objects("checkpoints")
+        val keptRecords = records.filterNot(::retiredRow)
+        val keptCheckpoints = checkpoints.filterNot(::retiredRow)
+        if (retiredAccounts.isEmpty() && keptRecords.size == records.size && keptCheckpoints.size == checkpoints.size) return null
+        // Copy rather than mutating the caller. Unknown fields and every retained row survive unchanged.
+        return JSONObject(saved.toString()).apply {
+            if (has("accounts")) put("accounts", JSONArray(accounts.filterNot { it.optString("platform") == "HEYBOX" }))
+            if (has("records")) put("records", JSONArray(keptRecords))
+            if (has("checkpoints")) put("checkpoints", JSONArray(keptCheckpoints))
+        }
     }
 }

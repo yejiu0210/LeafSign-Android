@@ -22,20 +22,6 @@ class WebLoginSmokeTest {
         InstrumentationRegistry.getInstrumentation().targetContext, WebLoginActivity::class.java
     ).putExtra(WebLoginActivity.EXTRA_PLATFORM, platform.name))
 
-    @Test fun heyboxHasOverviewZoomAndVisibleReturnToCommunityLogin() {
-        launch(Platform.HEYBOX).use { scenario ->
-            val browser=awaitBrowser(scenario)
-            scenario.onActivity { activity ->
-                assertTrue(browser.settings.useWideViewPort)
-                assertTrue(browser.settings.loadWithOverviewMode)
-                assertTrue(browser.settings.builtInZoomControls)
-                assertFalse(browser.settings.displayZoomControls)
-                assertTrue(browser.settings.userAgentString.contains("Android"))
-                assertTrue(activity.window.decorView.findViewWithTag<TextView>(WebLoginActivity.RETRY_TAG).text.contains("社区登录"))
-            }
-        }
-    }
-
     @Test fun nativeReturnTitleAndStatusExistBeforeWebsiteCompletes() {
         launch().use { scenario -> scenario.onActivity { activity ->
             val decor = activity.window.decorView

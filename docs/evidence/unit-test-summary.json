@@ -1,12 +1,12 @@
 {
-  "tests": 170.0,
+  "tests": 148.0,
   "failures": 0.0,
   "errors": 0.0,
   "skipped": 0.0,
   "suites": [
     {
       "name": "cn.onetap.checkin.core.ActionCheckpointTest",
-      "tests": 7,
+      "tests": 6,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -21,6 +21,13 @@
     {
       "name": "cn.onetap.checkin.core.NetClientSecurityTest",
       "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "cn.onetap.checkin.core.RetiredPlatformMigrationTest",
+      "tests": 8,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -47,13 +54,6 @@
       "skipped": 0
     },
     {
-      "name": "cn.onetap.checkin.login.HeyboxLoginCookiesTest",
-      "tests": 12,
-      "failures": 0,
-      "errors": 0,
-      "skipped": 0
-    },
-    {
       "name": "cn.onetap.checkin.login.LoginResultBrokerTest",
       "tests": 5,
       "failures": 0,
@@ -62,7 +62,7 @@
     },
     {
       "name": "cn.onetap.checkin.login.OfficialLoginPolicyTest",
-      "tests": 8,
+      "tests": 6,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -70,13 +70,6 @@
     {
       "name": "cn.onetap.checkin.platform.BilibiliAdapterTest",
       "tests": 10,
-      "failures": 0,
-      "errors": 0,
-      "skipped": 0
-    },
-    {
-      "name": "cn.onetap.checkin.platform.HeyboxAdapterTest",
-      "tests": 22,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -104,7 +97,7 @@
     },
     {
       "name": "cn.onetap.checkin.platform.TiebaLikeTaskTest",
-      "tests": 42,
+      "tests": 49,
       "failures": 0,
       "errors": 0,
       "skipped": 0

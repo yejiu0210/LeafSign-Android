@@ -251,6 +251,109 @@ class TiebaLikeTaskTest {
             assertEquals(listOf("21"),api.writes.map {it["thread_id"]})
         }
     }
+    @Test fun zeroPrimaryForumSkipsUnwrittenCandidateAndOnlyLikesNextVerifiedSameForumThread() {
+        for(zero in listOf<Any>(0,0L,"0")) {
+            val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {
+                candidateThreads=listOf("20","21")
+                onRead={body,fields -> if(fields["kz"]=="20") {
+                    body.getJSONObject("forum").put("id",zero)
+                    body.getJSONObject("thread").put("fid",10)
+                }}
+            }
+            api.onWrite={assertEquals("21",store.state.checkpoints.single().values["threadId"])}
+            assertEquals(TaskStatus.SUCCESS,task(store,api).execute(uid,bduss,tbs,target,listOf(forum)).status)
+            assertEquals(listOf("20","21","21","21"),api.reads.map {it["kz"]})
+            assertEquals(listOf("21"),api.writes.map {it["thread_id"]})
+            assertEquals("complete",store.state.checkpoints.single().values["stage"])
+        }
+    }
+    @Test fun zeroPrimaryForumIsNeverAcceptedByUsingRedundantForumOrOwnVote() {
+        val post=TiebaLikeCodec.Post("20","10","测试")
+        for(liked in listOf(0,1)) {
+            val body=JSONObject("""{"error_code":0,"user":{"id":100,"is_login":1},"forum":{"id":0},"thread":{"id":20,"fid":10,"agree":{"has_agree":$liked}}}""")
+            try {TiebaLikeCodec.liked(body,uid,post);fail("zero forum must not prove a vote")}catch(error:AdapterException) {
+                assertEquals(TaskStatus.UNKNOWN,error.status)
+                assertEquals("tieba field=forum_id expected=10 actual=zero",error.diagnostic)
+                assertTrue(TiebaLikeCodec.unidentifiedForumCandidate(error))
+            }
+        }
+    }
+    @Test fun savedUnwrittenZeroForumCandidateConsumesRepairBeforeSearchingAndKeepsOneLikeLimit() {
+        val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(checkpoint("selected"))))
+        val api=Api().apply {
+            candidateThreads=listOf("20","21")
+            onRead={body,fields -> if(fields["kz"]=="20")body.getJSONObject("forum").put("id",0)}
+            onCandidates={val saved=store.state.checkpoints.single().values
+                assertEquals("20",saved["threadId"]);assertEquals("true",saved["candidateRepairUsed"])
+                assertEquals("0",saved["likeAttempts"]);assertEquals("0",saved["unlikeAttempts"])
+            }
+        }
+        val task=task(store,api)
+        assertEquals(TaskStatus.PENDING,task.query(uid,bduss,target)?.status)
+        assertEquals(TaskStatus.SUCCESS,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals(listOf("21"),api.writes.map {it["thread_id"]})
+        assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])
+        assertEquals("1",store.state.checkpoints.single().values["likeAttempts"])
+        assertEquals(TaskStatus.ALREADY,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals(1,api.writes.size)
+    }
+    @Test fun exhaustedZeroForumCandidateRepairStaysConsumedAfterRestartAndChecksAtMostTenReplacements() {
+        val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(checkpoint("selected"))))
+        var searches=0
+        val api=Api().apply {
+            candidateThreads=(20..32).map {it.toString()}
+            onRead={body,_ -> body.getJSONObject("forum").put("id",0)}
+            onCandidates={searches++;assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])}
+        }
+        expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+        assertEquals(1,searches);assertEquals(11,api.reads.size)
+        assertEquals((20..30).map {it.toString()},api.reads.map {it["kz"]})
+        expectStatus(TaskStatus.UNKNOWN){task(store,api).query(uid,bduss,target)}
+        expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+        assertEquals(1,searches);assertTrue(api.writes.isEmpty())
+        assertEquals("20",store.state.checkpoints.single().values["threadId"])
+        assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])
+    }
+    @Test fun zeroPrimaryForumAfterSentLikeOrUnlikeNeverReplacesThreadOrResetsAttempts() {
+        for(prior in listOf(checkpoint("like_sent",likes=1),checkpoint("unlike_sent",unlikes=1))) {
+            val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(prior)));val api=Api().apply {
+                onRead={body,_ -> body.getJSONObject("forum").put("id",0)}
+                onCandidates={fail("write-sent thread must not be replaced")}
+            }
+            expectStatus(TaskStatus.UNKNOWN){task(store,api).query(uid,bduss,target)}
+            expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+            assertEquals(prior,store.state.checkpoints.single());assertTrue(api.writes.isEmpty())
+        }
+    }
+    @Test fun missingNullOrMalformedPrimaryForumCannotSkipOrRepairUnwrittenCandidate() {
+        for(value in listOf<Any?>(null,JSONObject.NULL,-1,0.0,"00","-0","synthetic-secret",true)) {
+            for(existing in listOf(false,true)) {
+                val prior=checkpoint("selected")
+                val store=MemoryStore(AppState(listOf(account),checkpoints=if(existing)listOf(prior) else emptyList()))
+                var searches=0
+                val api=Api().apply {
+                    candidateThreads=listOf("20","21")
+                    onRead={body,_ -> if(value==null)body.remove("forum") else body.getJSONObject("forum").put("id",value)}
+                    onCandidates={searches++}
+                }
+                expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+                assertEquals(if(existing)0 else 1,searches);assertEquals(1,api.reads.size);assertTrue(api.writes.isEmpty())
+                assertEquals(if(existing)listOf(prior) else emptyList<TaskCheckpoint>(),store.state.checkpoints)
+            }
+        }
+    }
+    @Test fun zeroPrimaryForumRecoveryRequiresExactUnknownDiagnosticWithPositiveExpectedForum() {
+        val valid="tieba field=forum_id expected=10 actual=zero"
+        assertTrue(TiebaLikeCodec.unidentifiedForumCandidate(AdapterException(TaskStatus.UNKNOWN,"fixture",valid)))
+        for(status in TaskStatus.entries.filterNot {it==TaskStatus.UNKNOWN})
+            assertFalse(TiebaLikeCodec.unidentifiedForumCandidate(AdapterException(status,"fixture",valid)))
+        for(diagnostic in listOf(
+            "tieba field=thread_id expected=20 actual=zero", "tieba field=redundant_fid expected=10 actual=zero",
+            "tieba field=forum_id expected=0 actual=zero", "tieba field=forum_id expected=missing actual=zero",
+            "tieba field=forum_id expected=10 actual=missing", "tieba field=forum_id expected=10 actual=invalid",
+            "$valid synthetic-secret", " $valid"))
+            assertFalse(TiebaLikeCodec.unidentifiedForumCandidate(AdapterException(TaskStatus.UNKNOWN,"fixture",diagnostic)))
+    }
     @Test fun moreThanThreeUnavailableCandidatesContinueUntilOneVerifiedThreadGetsOneLike() {
         val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {
             candidateThreads=(20..25).map {it.toString()}

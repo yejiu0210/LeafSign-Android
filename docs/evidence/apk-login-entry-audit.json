@@ -1,5 +1,0 @@
-{
-  "communityStartUrlPresent": true,
-  "oldLoginCenterStartUrlPresent": false,
-  "check": "release DEX constants only; not a device login test"
-}

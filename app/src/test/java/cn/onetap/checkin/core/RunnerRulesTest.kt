@@ -54,7 +54,7 @@ class RunnerRulesTest {
         }
         assertEquals(2,Runner(store,mapOf(Platform.SKLAND to adapter)).run())
         assertEquals(2,adapter.writes)
-        val added=Rules.addOrUpdate(AppState(),Identity("fixture","fixture",emptyList(),updatedCredential="fixture-fresh"),Platform.HEYBOX,"fixture-old","",null)
+        val added=Rules.addOrUpdate(AppState(),Identity("fixture","fixture",emptyList(),updatedCredential="fixture-fresh"),Platform.SKLAND,"fixture-old","",null)
         assertEquals("fixture-fresh",added.accounts.single().credential)
     }
     @Test fun removedBindingOrUnfollowedForumNeverWrites()=runBlocking {

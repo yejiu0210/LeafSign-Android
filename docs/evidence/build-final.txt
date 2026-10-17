@@ -24,11 +24,17 @@ Daemon will be stopped at the end of the build
 > Task :app:processReleaseManifest UP-TO-DATE
 > Task :app:processReleaseManifestForPackage UP-TO-DATE
 > Task :app:processReleaseResources UP-TO-DATE
+> Task :app:compileReleaseKotlin UP-TO-DATE
 > Task :app:javaPreCompileRelease UP-TO-DATE
+> Task :app:compileReleaseJavaWithJavac UP-TO-DATE
+> Task :app:dexBuilderRelease UP-TO-DATE
 > Task :app:desugarReleaseFileDependencies UP-TO-DATE
 > Task :app:mergeReleaseStartupProfile UP-TO-DATE
 > Task :app:mergeExtDexRelease UP-TO-DATE
+> Task :app:mergeDexRelease UP-TO-DATE
 > Task :app:mergeReleaseArtProfile UP-TO-DATE
+> Task :app:mergeReleaseGlobalSynthetics UP-TO-DATE
+> Task :app:compileReleaseArtProfile UP-TO-DATE
 > Task :app:mergeReleaseShaders UP-TO-DATE
 > Task :app:compileReleaseShaders NO-SOURCE
 > Task :app:generateReleaseAssets UP-TO-DATE
@@ -36,6 +42,12 @@ Daemon will be stopped at the end of the build
 > Task :app:compressReleaseAssets UP-TO-DATE
 > Task :app:extractReleaseVersionControlInfo UP-TO-DATE
 > Task :app:extractProguardFiles UP-TO-DATE
+> Task :app:generateReleaseLintVitalReportModel UP-TO-DATE
+> Task :app:lintVitalAnalyzeRelease UP-TO-DATE
+> Task :app:lintVitalReportRelease SKIPPED
+> Task :app:lintVitalRelease SKIPPED
+> Task :app:processReleaseJavaRes UP-TO-DATE
+> Task :app:mergeReleaseJavaResource UP-TO-DATE
 > Task :app:optimizeReleaseResources UP-TO-DATE
 > Task :app:collectReleaseDependencies UP-TO-DATE
 > Task :app:sdkReleaseDependencyData UP-TO-DATE
@@ -58,66 +70,48 @@ Daemon will be stopped at the end of the build
 > Task :app:processDebugManifest UP-TO-DATE
 > Task :app:processDebugManifestForPackage UP-TO-DATE
 > Task :app:processDebugResources UP-TO-DATE
-> Task :app:compileReleaseKotlin
-w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/login/WebLoginActivity.kt:95:60 'static field SOFT_INPUT_ADJUST_RESIZE: Int' is deprecated. Deprecated in Java.
-w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/platform/TiebaLikeTask.kt:57:58 Condition is always 'true'.
-
-> Task :app:compileDebugKotlin
-w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/login/WebLoginActivity.kt:95:60 'static field SOFT_INPUT_ADJUST_RESIZE: Int' is deprecated. Deprecated in Java.
-w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/platform/TiebaLikeTask.kt:57:58 Condition is always 'true'.
-
-> Task :app:compileReleaseJavaWithJavac
-> Task :app:dexBuilderRelease
-> Task :app:mergeReleaseGlobalSynthetics UP-TO-DATE
-> Task :app:generateReleaseLintVitalReportModel
-> Task :app:mergeDexRelease
-> Task :app:compileReleaseArtProfile
-> Task :app:processReleaseJavaRes UP-TO-DATE
-> Task :app:mergeReleaseJavaResource UP-TO-DATE
+> Task :app:compileDebugKotlin UP-TO-DATE
 > Task :app:javaPreCompileDebug UP-TO-DATE
-> Task :app:compileDebugJavaWithJavac
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
 > Task :app:mergeDebugShaders UP-TO-DATE
 > Task :app:compileDebugShaders NO-SOURCE
 > Task :app:generateDebugAssets UP-TO-DATE
 > Task :app:mergeDebugAssets UP-TO-DATE
 > Task :app:compressDebugAssets UP-TO-DATE
 > Task :app:desugarDebugFileDependencies UP-TO-DATE
-> Task :app:dexBuilderDebug
+> Task :app:dexBuilderDebug UP-TO-DATE
 > Task :app:mergeDebugGlobalSynthetics UP-TO-DATE
 > Task :app:processDebugJavaRes UP-TO-DATE
 > Task :app:mergeDebugJavaResource UP-TO-DATE
 > Task :app:checkDebugDuplicateClasses UP-TO-DATE
 > Task :app:mergeExtDexDebug UP-TO-DATE
 > Task :app:mergeLibDexDebug UP-TO-DATE
-> Task :app:mergeProjectDexDebug
+> Task :app:mergeProjectDexDebug UP-TO-DATE
 > Task :app:mergeDebugJniLibFolders UP-TO-DATE
 > Task :app:mergeDebugNativeLibs UP-TO-DATE
 > Task :app:stripDebugDebugSymbols UP-TO-DATE
 > Task :app:validateSigningDebug UP-TO-DATE
 > Task :app:writeDebugAppMetadata UP-TO-DATE
 > Task :app:writeDebugSigningConfigVersions UP-TO-DATE
-> Task :app:packageDebug
-> Task :app:createDebugApkListingFileRedirect
-> Task :app:assembleDebug
-> Task :app:bundleDebugClassesToRuntimeJar
-> Task :app:bundleDebugClassesToCompileJar
-> Task :app:lintVitalAnalyzeRelease
-> Task :app:compileDebugUnitTestKotlin
+> Task :app:packageDebug UP-TO-DATE
+> Task :app:createDebugApkListingFileRedirect UP-TO-DATE
+> Task :app:assembleDebug UP-TO-DATE
+> Task :app:bundleDebugClassesToRuntimeJar UP-TO-DATE
+> Task :app:bundleDebugClassesToCompileJar UP-TO-DATE
+> Task :app:packageRelease
+> Task :app:createReleaseApkListingFileRedirect
+> Task :app:assembleRelease
 > Task :app:preDebugUnitTestBuild UP-TO-DATE
 > Task :app:javaPreCompileDebugUnitTest UP-TO-DATE
-> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
-> Task :app:processDebugUnitTestJavaRes UP-TO-DATE
-> Task :app:testDebugUnitTest
 > Task :app:generateReleaseLintReportModel
 > Task :app:bundleReleaseClassesToCompileJar
 > Task :app:preReleaseUnitTestBuild UP-TO-DATE
 > Task :app:generateReleaseUnitTestLintModel
+> Task :app:compileDebugUnitTestKotlin
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes UP-TO-DATE
 > Task :app:lintAnalyzeRelease
-> Task :app:lintVitalReportRelease SKIPPED
-> Task :app:lintVitalRelease SKIPPED
-> Task :app:packageRelease
-> Task :app:createReleaseApkListingFileRedirect
-> Task :app:assembleRelease
+> Task :app:testDebugUnitTest
 > Task :app:lintAnalyzeReleaseUnitTest
 > Task :app:preDebugAndroidTestBuild SKIPPED
 > Task :app:processDebugAndroidTestManifest UP-TO-DATE
@@ -158,7 +152,6 @@ w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2
 Wrote HTML report to file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/build/reports/lint-results-release.html
 
 > Task :app:lintRelease
-w: Detected multiple Kotlin daemon sessions at
 
-BUILD SUCCESSFUL in 3m 52s
-126 actionable tasks: 30 executed, 96 up-to-date
+BUILD SUCCESSFUL in 2m 57s
+126 actionable tasks: 15 executed, 111 up-to-date

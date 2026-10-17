@@ -34,6 +34,9 @@ internal object TiebaLikeCodec {
             ?: return false
         return match.groupValues[1] != match.groupValues[2]
     }
+    /** A zero primary forum ID cannot prove the target; it only rejects an unwritten candidate. */
+    fun unidentifiedForumCandidate(error: AdapterException): Boolean = error.status==TaskStatus.UNKNOWN &&
+        Regex("tieba field=forum_id expected=[1-9][0-9]{0,18} actual=zero").matches(error.diagnostic)
     /** Paired code/message is checked only for pb detail reads, never for writes or list reads. */
     private fun requireDetailSuccess(body: JSONObject, post: Post) {
         val code=number(body.opt("error_code"))

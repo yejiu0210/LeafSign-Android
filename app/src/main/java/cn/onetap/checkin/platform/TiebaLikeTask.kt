@@ -74,7 +74,7 @@ internal class TiebaLikeTask(
         if (posts.isNotEmpty()) {
             val start=choose(posts.size)
             var rejected: AdapterException?=null
-            // Continue past confirmed unavailable or wrong-forum candidates in this
+            // Continue past unavailable, wrong-forum, or zero-forum-ID candidates in this
             // bounded list. Only the first fully verified candidate can be written.
             for(offset in 0 until minOf(10,posts.size)) {
                 val post=posts[(start+offset)%posts.size]
@@ -97,7 +97,8 @@ internal class TiebaLikeTask(
         return result(TaskStatus.SUCCESS,"已确认${step.post.forumName}吧帖子 ${step.post.threadId} 点赞生效；此吧今日仅处理这一帖")
     }
     private fun pending() = result(TaskStatus.PENDING,"当天所选帖子尚需执行剩余点赞步骤")
-    private fun rejectUnwrittenCandidate(error: AdapterException) = TiebaLikeCodec.explicitIdentityMismatch(error) || TiebaLikeCodec.unavailableCandidate(error)
+    private fun rejectUnwrittenCandidate(error: AdapterException) = TiebaLikeCodec.explicitIdentityMismatch(error) ||
+        TiebaLikeCodec.unavailableCandidate(error) || TiebaLikeCodec.unidentifiedForumCandidate(error)
     private fun canReplaceCandidate(step: Step, error: AdapterException) = step.stage=="selected" && step.likes==0 && step.unlikes==0 &&
         !step.candidateRepairUsed && rejectUnwrittenCandidate(error)
     /** One migration write only for a recorded, explicit legacy rejection, never an unknown timeout. */

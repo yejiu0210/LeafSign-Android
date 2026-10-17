@@ -1,7 +1,7 @@
 package cn.onetap.checkin.core
 
 enum class Platform(val title: String) {
-    NETEASE("网易云音乐"), TIEBA("百度贴吧"), SKLAND("森空岛"), BILIBILI("哔哩哔哩"), HEYBOX("小黑盒")
+    NETEASE("网易云音乐"), TIEBA("百度贴吧"), SKLAND("森空岛"), BILIBILI("哔哩哔哩")
 }
 
 enum class TaskStatus(val title: String) {

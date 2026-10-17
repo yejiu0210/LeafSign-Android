@@ -31,11 +31,6 @@ class ActionCheckpointTest {
         val added=Rules.addOrUpdate(AppState(),Identity("fixture","fixture",targets),Platform.TIEBA,"fixture-only","",null)
         assertEquals(setOf("forum"),added.accounts.single().enabled)
     }
-    @Test fun unknownHeyboxReasonIsKeptWithoutServerText() {
-        assertEquals("heybox missing task_list",Rules.safeDiagnostic("heybox missing task_list"))
-        assertEquals("",Rules.safeDiagnostic("heybox synthetic-secret raw response"))
-        assertEquals("",Rules.safeDiagnostic("heybox missing task_list synthetic-secret"))
-    }
     @Test fun onlyFixedPublicTiebaIdentityDiagnosticsSurviveRedaction() {
         listOf("tieba field=thread_id expected=123 actual=124", "tieba field=forum_id expected=456 actual=missing",
             "tieba field=redundant_fid expected=456 actual=zero", "tieba field=forum_id expected=456 actual=invalid").forEach {
