@@ -1,5 +1,5 @@
 {
-  "tests": 127.0,
+  "tests": 135.0,
   "failures": 0.0,
   "errors": 0.0,
   "skipped": 0.0,
@@ -55,7 +55,7 @@
     },
     {
       "name": "cn.onetap.checkin.login.OfficialLoginPolicyTest",
-      "tests": 6,
+      "tests": 7,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -97,7 +97,7 @@
     },
     {
       "name": "cn.onetap.checkin.platform.TiebaLikeTaskTest",
-      "tests": 17,
+      "tests": 24,
       "failures": 0,
       "errors": 0,
       "skipped": 0

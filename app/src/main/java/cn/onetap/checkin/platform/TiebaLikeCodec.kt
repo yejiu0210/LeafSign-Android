@@ -7,7 +7,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.zip.CRC32
 
-/** Protocol facts from aiotieba a5472bef (Unlicense); no platform traffic or credentials here. */
+/** CUID from aiotieba a5472bef (Unlicense); opAgree wire fields checked against Android MiniTiebaApi. */
 internal object TiebaLikeCodec {
     const val READ_VERSION = "12.64.1.1"
     const val WRITE_VERSION = "22.12.1.0"
@@ -80,7 +80,9 @@ internal object TiebaLikeCodec {
     fun readFields(bduss: String) = mapOf("BDUSS" to bduss, "_client_type" to "2", "_client_version" to READ_VERSION)
     fun writeFields(bduss: String, tbs: String, post: Post, cuid: String, undo: Boolean) = mapOf(
         "BDUSS" to bduss, "_client_version" to WRITE_VERSION, "agree_type" to "2", "cuid" to cuid,
-        "content_type" to "3", "op_type" to if (undo) "1" else "0", "post_id" to "0", "tbs" to tbs, "thread_id" to post.threadId
+        // The wire key is obj_type. aiotieba 50d2bb0c renamed it during a local type refactor;
+        // original MiniTiebaApi and maintained Android clients still send obj_type for opAgree.
+        "obj_type" to "3", "op_type" to if (undo) "1" else "0", "post_id" to "0", "tbs" to tbs, "thread_id" to post.threadId
     )
 
     fun newCuid(): String {

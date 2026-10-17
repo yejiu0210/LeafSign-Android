@@ -2,6 +2,8 @@
 
 入口为 `PlatformAdapter.validate / query / execute`，统一执行逻辑在 `core/Runner.kt`。平台实现相互独立；不需要插件框架或后端。
 
+0.4.1 核实小黑盒裸域与www提供相同官网，主框架增加精确 `xiaoheihe.cn`，避免拦截登录后返回并锁死检测。官方成功跳转时先读取会话并服务端验证身份；独立登录中心使用已查证的 force_relogin，保留正常移动UA，并为电脑页启用宽视口/overview/缩放兜底。不注入表单CSS、不替用户勾协议、不用CLI模式把凭证拼入URL。裸域、Cookie范围及布局证据见 `evidence/heybox-login-layout.md`。
+
 0.4.0 新增 `HeyboxAdapter`，只使用已核实的官方网页签名协议与三个固定 API。`restore_login` 返回的新 `pkey` 必须通过 `Identity.updatedCredential` 供新账号保存，已存账号用平台、UID、原始凭证比较后更新；Runner 每次请求重新读取该账号最新凭证，避免用快照中失效的旧会话。任务中心唯一 type=sign 且明确 finish 才认为今日完成，写入未知但查询完成不冒报本次成功。见 `integration-heybox.md`。
 
 贴吧新增独立目标 `tieba:like:<forumId>`，默认关闭，与签到勾选分开。`TiebaLikeTask` 的账号、目标、周期 checkpoint 在现有 AES-GCM 状态中保存，写请求前必须落盘；同吧当日固定一帖，取消最多一次、同帖点赞最多两次。恢复先查明确的本人点赞状态，不能重新选帖、推测未点赞或把点赞成功当作经验到账。删除账号也删操作进度。详见 `integration-tieba-like.md`。

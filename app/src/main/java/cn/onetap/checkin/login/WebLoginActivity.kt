@@ -124,7 +124,7 @@ class WebLoginActivity : ComponentActivity() {
         root.addView(progressBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(3)))
         val actions = LinearLayout(this)
         detectButton = Button(this).apply { text = "登录完成，检测账号"; textSize = 12f; setOnClickListener { detect(manual = true) } }
-        retryButton = Button(this).apply { text = "重新加载官网"; tag = RETRY_TAG; textSize = 12f; setOnClickListener { retryLogin() } }
+        retryButton = Button(this).apply { text = if(platform==Platform.HEYBOX) "重新打开手机版登录" else "重新加载官网"; tag = RETRY_TAG; textSize = 12f; setOnClickListener { retryLogin() } }
         styleButton(detectButton); styleButton(retryButton)
         actions.addView(detectButton, LinearLayout.LayoutParams(0, dp(52), 1.2f))
         actions.addView(retryButton, LinearLayout.LayoutParams(0, dp(52), 1f)); root.addView(actions)
@@ -217,8 +217,11 @@ class WebLoginActivity : ComponentActivity() {
                 if (platform == Platform.NETEASE) userAgentString = userAgentString
                     .replace(Regex("\\([^)]*Android[^)]*\\)"), "(X11; Linux x86_64)")
                     .replace(" Version/4.0", "").replace(" Mobile", "")
-                if (platform == Platform.NETEASE) {
+                // Heybox's login center has its own mobile viewport. Its desktop-home fallback
+                // has no viewport and a fixed centered dialog: overview keeps the whole form visible.
+                if (platform == Platform.NETEASE || platform == Platform.HEYBOX) {
                     useWideViewPort = true; loadWithOverviewMode = true
+                    setSupportZoom(true)
                     builtInZoomControls = true; displayZoomControls = false
                 }
             }
@@ -245,6 +248,17 @@ class WebLoginActivity : ComponentActivity() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val allowed = if (request.isForMainFrame) allowedNavigation(request.url) else OfficialLoginPolicy.allowedSubframe(request.url.toString())
             if (!allowed && request.isForMainFrame) failPage("官网尝试跳转到非 HTTPS 或未经核实的地址，已阻止。请使用网页内其他登录方式。", stop = false)
+            if (allowed && request.isForMainFrame && platform==Platform.HEYBOX && !preparing && !checking && !closing &&
+                autoChecks<3 && OfficialLoginPolicy.isHeyboxLoginReturn(request.url.toString())) {
+                // Official login writes root-domain cookies before redirecting to its community.
+                // Validate that session first; the landing site's login UI is not an auth result.
+                val credential=cookieCredential()
+                if(credential!=null && newAutoCredential(credential)) {
+                    pageTimeout?.cancel(); loading=false; failedNavigation=false
+                    validateCredential(credential)
+                    return true
+                }
+            }
             return !allowed
         }
         override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? =
@@ -273,7 +287,7 @@ class WebLoginActivity : ComponentActivity() {
             } else if (allowedNavigation(uri)) {
                 if (!checking) {
                     revealPage()
-                    showStatus("请在官网完成登录。登录后自动校验，也可点击“登录完成，检测账号”。")
+                    showStatus(if(platform==Platform.HEYBOX) "请在官方手机版完成登录，登录后自动导入。电脑弹窗可双指缩放；协议请本人勾选。" else "请在官网完成登录。登录后自动校验，也可点击“登录完成，检测账号”。")
                     detect(manual = false); inspectEmptyPage(view, navigationGeneration)
                 }
             }
@@ -352,7 +366,7 @@ class WebLoginActivity : ComponentActivity() {
             Platform.TIEBA -> listOf("https://tieba.baidu.com/")
             Platform.BILIBILI -> listOf("https://api.bilibili.com/", "https://www.bilibili.com/")
             Platform.SKLAND -> listOf("https://www.skland.com/", "https://m.skland.com/")
-            Platform.HEYBOX -> listOf("https://www.xiaoheihe.cn/", "https://login.xiaoheihe.cn/", "https://api.xiaoheihe.cn/")
+            Platform.HEYBOX -> listOf("https://xiaoheihe.cn/", "https://www.xiaoheihe.cn/", "https://login.xiaoheihe.cn/", "https://api.xiaoheihe.cn/")
         }
         val allowed = when (platform) {
             Platform.NETEASE -> setOf("MUSIC_U", "__csrf")

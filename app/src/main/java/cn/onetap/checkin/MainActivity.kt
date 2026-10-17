@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable private fun AppScreen(app: CheckInApp,onNotification: ()->Unit) {
     val state by app.state.collectAsStateWithLifecycle()
     val busy by app.busy.collectAsStateWithLifecycle()
@@ -143,7 +144,7 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
                             if(a.details.isNotBlank())Text(a.details,style=MaterialTheme.typography.bodySmall)
                             if(a.platform==Platform.TIEBA){
                                 Text("每个吧的随机点赞可单独勾选，默认关闭；每吧每天各选一帖，已赞则取消一次再赞。经验由贴吧判定。更新后先校验 / 刷新以载入。",style=MaterialTheme.typography.bodySmall)
-                                Row { TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=it.enabled+it.targets.filter{t->t.bound&&t.type=="forum"}.map{t->t.id})else it})}},enabled=!busy){Text("全选贴吧")};TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=it.enabled-it.targets.filter{t->t.type=="forum"}.map{t->t.id}.toSet())else it})}},enabled=!busy){Text("取消全部贴吧")}}
+                                FlowRow { TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=it.enabled+it.targets.filter{t->t.bound&&t.type=="forum"}.map{t->t.id})else it})}},enabled=!busy){Text("全选贴吧")};TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=it.enabled-it.targets.filter{t->t.type=="forum"}.map{t->t.id}.toSet())else it})}},enabled=!busy){Text("取消全部贴吧")};TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=it.enabled+it.targets.filter{t->t.bound&&t.type=="daily-like"}.map{t->t.id})else it})}},enabled=!busy&&a.credential.isNotBlank()){Text("全选随机一赞")}}
                             }
                             a.targets.forEach { t -> Row(verticalAlignment=Alignment.CenterVertically) {
                                 Checkbox(checked=t.id in a.enabled,onCheckedChange={v->mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=if(v)it.enabled+t.id else it.enabled-t.id)else it})}},enabled=!busy&&t.bound&&a.credential.isNotBlank())

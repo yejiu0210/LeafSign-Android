@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.platform.MusicTiebaAdapterTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-10-17T08:12:29.116Z" hostname="PC-20260405TBKV" time="0.1">
+<testsuite name="cn.onetap.checkin.platform.MusicTiebaAdapterTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-10-17T08:46:27.034Z" hostname="PC-20260405TBKV" time="0.053">
   <properties/>
   <testcase name="neteaseMissingAndUnknownResponsesNeverBecomeSuccessOrAlready" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.004"/>
-  <testcase name="weapiProducesAesBlocksAndFixedWidthRsaCiphertext" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.052"/>
+  <testcase name="weapiProducesAesBlocksAndFixedWidthRsaCiphertext" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.018"/>
   <testcase name="neteaseVipWriteCodeAloneNeverProvesMusicSign" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.0"/>
-  <testcase name="credentialsOnlyForwardTheirOwnWhitelist" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.016"/>
+  <testcase name="credentialsOnlyForwardTheirOwnWhitelist" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.012"/>
   <testcase name="tiebaAuthenticationAndManualErrorsAreDistinct" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.0"/>
   <testcase name="tiebaSignatureMatchesIndependentUtf8VectorAndIsOrderIndependent" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.004"/>
   <testcase name="neteaseManualVerificationStopsTheTask" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.001"/>
-  <testcase name="credentialErrorsAndUnknownDiagnosticsNeverEchoSecrets" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.005"/>
+  <testcase name="credentialErrorsAndUnknownDiagnosticsNeverEchoSecrets" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.008"/>
   <testcase name="unknownCodeWithPositiveRewardStillDoesNotSucceed" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.001"/>
   <testcase name="tiebaOnlyKnownDuplicateCodeBecomesAlready" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.001"/>
-  <testcase name="tiebaRequiresPositiveBusinessRewardToAcceptCodeZero" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.013"/>
+  <testcase name="tiebaRequiresPositiveBusinessRewardToAcceptCodeZero" classname="cn.onetap.checkin.platform.MusicTiebaAdapterTest" time="0.002"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

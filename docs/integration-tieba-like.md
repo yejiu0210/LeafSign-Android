@@ -8,11 +8,13 @@
 
 同一天选定的账号、吧和帖子持久固定；超时、失败、重启或重试不会换帖，也不会改去其他吧补做。没有可用候选帖子时保留该吧的失败或待确认结果，其他吧和账号可继续。
 
-每吧每天最多取消一次已有点赞，并最多进行两次同一帖的有限点赞尝试。第二次只用于先查询确认尚未点赞后的恢复，不循环刷赞。验证码、风险限制或身份错误立即停止该项。
+正常任务每吧每天最多取消一次已有点赞，并最多进行两次同一帖的有限点赞尝试。第二次只用于先查询确认尚未点赞后的恢复，不循环刷赞。0.4.0 明确被拒绝的旧协议进度仅有下文列出的单次修复例外。验证码、风险限制或身份错误立即停止该项。
 
 ## 验证状态
 
 已取得维护中的开源实现、许可及官方 HTTPS 匿名只读响应，新增点赞与取消点赞尚未使用真实账号验证。匿名检查没有携带 BDUSS / STOKEN，没有发起点赞或取消操作。用户 2026-10-17 报告原有四平台正常签到，是既有功能的用户报告，**不代表本次新点赞功能已通过真实账号验证**。
+
+同日用户反馈 0.4.0 点赞返回“结果待确认；贴吧点赞结果无法确认，未继续操作”，脱敏错误码为 `300000`。这是真实使用中的失败报告，证明该次写请求未得到明确成功；不是成功验收。0.4.1 对照原 Android 及维护分支修正一个请求字段差异，修正后仍需本人账号验证。
 
 构建和隔离测试执行结果统一见 [验证记录](verification.md)。测试数据不会进入正式运行路径。
 
@@ -44,7 +46,7 @@
 | `BDUSS` | 当前已验证账号的会话凭证 |
 | `_client_version` | `22.12.1.0` |
 | `agree_type` | `2` 表示点赞；`5` 是点踩，不用于取消 |
-| `content_type` | `3` 表示主题帖 |
+| `obj_type` | `3` 表示主题帖；0.4.1 修正此前 `content_type` 的字段差异 |
 | `op_type` | `0` 点赞、`1` 取消当前点赞 |
 | `post_id` | `0`，不对首楼回复另行点赞 |
 | `thread_id` | 当天该吧固定选中的主题帖 ID |
@@ -56,6 +58,22 @@
 
 `cuid_galaxy2` 的参考公式包含 `MD5("com.baidu" + android_id)`、`|V` 和 heliosHash Base32；heliosHash 涉及 CRC32、XXH32 与 40 位位域。实现使用下述 Unlicense 代码说明的实际算法，不省略字段，不把随机 UUID 或 `-` 冒充完整 CUID，不读取其他 App 的设备私有数据。
 
+### 0.4.1：`300000` 报告与协议字段修正
+
+0.4.0 跟随所查 aiotieba 最新代码使用了 `content_type=3`。此次逐提交核查发现，aiotieba 的 [2026-10-02 重构提交 `50d2bb0c`](https://github.com/lumina37/aiotieba/commit/50d2bb0c4b5359429d364f1d74b80720e6650209) 在把本地变量 `obj_type` 重命名为 `content_type` 时，同时把实际表单键 `"obj_type"` 改成了 `"content_type"`。重构前的同一端点发送 `obj_type`。
+
+直接对照原 Android [MiniTiebaApi.kt 的 `opAgreeFlow`](https://github.com/HuanCheng65/TiebaLite/blob/2885b2aabbbf47aba7bf12b1cd7cbc03b1f5ec15/app/src/main/java/com/huanchengfly/tieba/post/api/retrofit/interfaces/MiniTiebaApi.kt)，其明确声明 `@Field("obj_type") objType: Int = 3`。维护分支 [zzc10086 `9701bfb6`，2026-09-27](https://github.com/zzc10086/TiebaLite/blob/9701bfb6aaf261cc37b20b5793a8404261077f49/app/src/main/java/com/huanchengfly/tieba/post/api/retrofit/interfaces/MiniTiebaApi.kt) 和 [qaqmin `414a3dce`，2026-10-16](https://github.com/qaqmin/TiebaLite/blob/414a3dceaab1c940449af72be04a9f8ff64885ef/app/src/main/java/com/huanchengfly/tieba/post/api/retrofit/interfaces/MiniTiebaApi.kt) 的同一端点也保持 `obj_type`。这里只核对协议事实，未复制这些项目的客户端实现代码。
+
+因此 0.4.1 将表单键恢复为资料相互印证的 `obj_type=3`，由既有签名器重新计算签名；不同时发送两个互相冲突的字段，不尝试循环切换客户端版本、设备值或登录方式。隔离测试覆盖主题帖点赞与取消请求的字段、独立 .NET MD5 向量，以及 `300000` 拒绝不能完成任务、换帖或为新协议增加尝试预算。
+
+为让当日已经使用过 0.4.0 的账号可以恢复，旧 checkpoint 缺少 `agreeProtocol` 时识别为 `legacy`；0.4.1 新选择及每次新写入均保存 `agreeProtocol=obj_type`。**仅**在旧协议已经达到原次数限制、同账号/同吧任务/同日周期最近的非执行中记录明确保留 `error_code=300000`、且当前只读查询确认同帖状态仍需要相应操作时，允许一次修正协议写入。写之前加密持久化 `repairUsed=true` 与新协议标记，不清空次数、不换帖。旧点赞两次失败可增加一次同帖点赞；旧取消一次失败且仍已赞可增加一次同帖取消，再完成原本尚未执行的点赞步骤。
+
+此预算只用于旧协议迁移：未知超时、其他错误码、其他账号/任务/日期的拒绝记录、已用过修复机会或已经标记为新协议的任务均不能申请。修复仍失败或响应未知后不再增加写入；若只读确认点赞已生效则完成。新协议正常任务仍维持一次取消、两次同帖点赞的原上限。测试同时覆盖旧进度有界恢复、修复写前落盘与中断后不能重复取消。
+
+**确认范围**：可以确认 0.4.0 请求键与原 Android 协议不同，以及此次代码已修正该差异；尚不能用资料证明这一定是该账号 `300000` 的唯一原因，也不能宣称修正后已经真实点赞。不同业务也使用过 `300000`，没有将它硬编码解释成登录失效、验证码或“已点赞”；仍保持“结果待确认”。没有原始响应凭证上传，也没有为定位问题发送任何真实点赞写请求。
+
+User-Agent 未盲目修改：[aiotieba `HttpCore`](https://github.com/lumina37/aiotieba/blob/a5472bef5bbae454fce33ed03bcbeaf7950d1bcb/src/aiotieba/core/http.py) 的 form 请求使用 `aiotieba/<version>` 和空 app CookieJar，而非强制 `bdtb` UA；现有资料不足以把本次错误归因于 UA。也没有把签到成功当成点赞已验证。
+
 ## 执行、恢复与结果
 
 1. 校验当前账号身份、所选贴吧归属及关注状态。
@@ -63,7 +81,7 @@
 3. 查询固定帖的当前点赞状态。若已赞，最多取消一次并查询确认取消；若未赞，直接进入点赞。
 4. 每次写入**之前**持久保存阶段与尝试计数，再发送请求。进程中断不会将未完成步骤写成成功。
 5. 点赞后查询同帖状态；只有可验证的当前账号、吧、帖子与点赞状态一致才完成。已发送但结果未知时先查询；不能盲目再取消、换帖或无限重发。
-6. 已完成的本地当天任务再次触发时不重复取消或点赞。未完成且已达到一次取消、两次同帖点赞上限时停止，留待本人查看。
+6. 已完成的本地当天任务再次触发时不重复取消或点赞。新任务达到一次取消、两次同帖点赞上限时停止；旧协议仅可按上文严格条件使用一次迁移修复机会。
 
 服务器“当前已赞”与工具“今天已完成这次操作”是不同证据。未建立今天的操作历史时，不把昨天留下的赞当成今天已执行；已持久记录的完成阶段才阻止重复执行。
 
@@ -88,7 +106,7 @@
 
 主要参考 [lumina37/aiotieba](https://github.com/lumina37/aiotieba)，[Unlicense](https://github.com/lumina37/aiotieba/blob/a5472bef5bbae454fce33ed03bcbeaf7950d1bcb/LICENSE)。本次 master 提交 `a5472bef5bbae454fce33ed03bcbeaf7950d1bcb`，提交时间 `2026-10-11T02:41:45Z`。
 
-- [agree/_api.py](https://github.com/lumina37/aiotieba/blob/a5472bef5bbae454fce33ed03bcbeaf7950d1bcb/src/aiotieba/api/agree/_api.py)：点赞/取消的字段和错误响应。
+- [agree/_api.py](https://github.com/lumina37/aiotieba/blob/a5472bef5bbae454fce33ed03bcbeaf7950d1bcb/src/aiotieba/api/agree/_api.py)：点赞/取消的流程与错误响应；`obj_type` 字段以本节上方的原 Android 对照为准，未继续照搬此版本的重命名差异。
 - [client.py](https://github.com/lumina37/aiotieba/blob/a5472bef5bbae454fce33ed03bcbeaf7950d1bcb/src/aiotieba/client.py)：主题帖调用语义及频繁调用限制说明。
 - [const.py](https://github.com/lumina37/aiotieba/blob/a5472bef5bbae454fce33ed03bcbeaf7950d1bcb/src/aiotieba/const.py)：客户端版本与域名。
 - [get_threads/_api.py](https://github.com/lumina37/aiotieba/blob/a5472bef5bbae454fce33ed03bcbeaf7950d1bcb/src/aiotieba/api/get_threads/_api.py) 与 [issue #222](https://github.com/lumina37/aiotieba/issues/222)：旧版列表协议与高版本结构差异。
@@ -109,7 +127,8 @@ aiotieba 当前部分读取使用 protobuf / HTTP transport，本工程没有复
 
 ## 最短人工验证
 
-1. 对已添加的贴吧账号执行“校验 / 刷新”，在任务选择里只启用一个吧的“每日随机点赞一帖”。
+1. 对已添加的贴吧账号执行“校验 / 刷新”，在任务选择里只启用一个吧的“每日随机点赞一帖”；需要全部开启时使用“全选随机一赞”，与“全选贴吧”的签到开关独立。
 2. 执行一次，查看结果中的具体吧和帖子；到官方贴吧核对该主题帖点赞状态。经验以官方记录为准。
 3. 同一天再次执行，应不重复取消或点赞；再启用第二个吧验证独立选择与记录。
 4. 发生网络中断时只重试该失败项，确认仍使用当天同一吧、同一帖。验证码须本人完成，不发送登录凭证给聊天。
+5. 如果 0.4.0 当天已经达到次数上限，覆盖安装不会清空记录或重新选帖。只有最近同账号/同任务/同日记录明确为 `300000` 且只读状态符合条件时使用一次同帖协议修复机会；其他旧未知结果仍保留状态，下一周期再验证。未达到原上限时只使用剩余次数。

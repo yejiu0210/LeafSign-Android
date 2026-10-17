@@ -18,9 +18,23 @@ import java.io.ByteArrayInputStream
 
 /** Requires a device/emulator; building this test APK is not evidence that it has run. */
 class WebLoginSmokeTest {
-    private fun launch() = ActivityScenario.launch<WebLoginActivity>(Intent(
+    private fun launch(platform: Platform = Platform.SKLAND) = ActivityScenario.launch<WebLoginActivity>(Intent(
         InstrumentationRegistry.getInstrumentation().targetContext, WebLoginActivity::class.java
-    ).putExtra(WebLoginActivity.EXTRA_PLATFORM, Platform.SKLAND.name))
+    ).putExtra(WebLoginActivity.EXTRA_PLATFORM, platform.name))
+
+    @Test fun heyboxHasOverviewZoomAndVisibleReturnToMobileLogin() {
+        launch(Platform.HEYBOX).use { scenario ->
+            val browser=awaitBrowser(scenario)
+            scenario.onActivity { activity ->
+                assertTrue(browser.settings.useWideViewPort)
+                assertTrue(browser.settings.loadWithOverviewMode)
+                assertTrue(browser.settings.builtInZoomControls)
+                assertFalse(browser.settings.displayZoomControls)
+                assertTrue(browser.settings.userAgentString.contains("Android"))
+                assertTrue(activity.window.decorView.findViewWithTag<TextView>(WebLoginActivity.RETRY_TAG).text.contains("手机版登录"))
+            }
+        }
+    }
 
     @Test fun nativeReturnTitleAndStatusExistBeforeWebsiteCompletes() {
         launch().use { scenario -> scenario.onActivity { activity ->

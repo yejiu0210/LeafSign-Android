@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.core.ThemeSettingsTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-17T08:12:28.259Z" hostname="PC-20260405TBKV" time="0.01">
+<testsuite name="cn.onetap.checkin.core.ThemeSettingsTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-17T08:46:26.514Z" hostname="PC-20260405TBKV" time="0.012">
   <properties/>
-  <testcase name="oldSettingsKeepTheirValuesAndDefaultToSystemTheme" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.003"/>
-  <testcase name="explicitThemePersistsWithOtherSettings" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.002"/>
-  <testcase name="systemThemeFollowsBothSystemStates" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.001"/>
-  <testcase name="unrecognizedStoredThemeFallsBackToSystem" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.001"/>
+  <testcase name="oldSettingsKeepTheirValuesAndDefaultToSystemTheme" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.004"/>
+  <testcase name="explicitThemePersistsWithOtherSettings" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.0"/>
+  <testcase name="systemThemeFollowsBothSystemStates" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.0"/>
+  <testcase name="unrecognizedStoredThemeFallsBackToSystem" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.0"/>
   <testcase name="explicitThemeOverridesBothSystemStates" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.0"/>
-  <testcase name="missingSettingsUseExistingDefaults" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.0"/>
+  <testcase name="missingSettingsUseExistingDefaults" classname="cn.onetap.checkin.core.ThemeSettingsTest" time="0.001"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

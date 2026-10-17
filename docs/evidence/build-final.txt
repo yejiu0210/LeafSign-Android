@@ -10,7 +10,7 @@ Daemon will be stopped at the end of the build
 > Task :app:checkReleaseDuplicateClasses UP-TO-DATE
 > Task :app:buildKotlinToolingMetadata UP-TO-DATE
 > Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
-> Task :app:generateReleaseBuildConfig UP-TO-DATE
+> Task :app:generateReleaseBuildConfig
 > Task :app:checkReleaseAarMetadata UP-TO-DATE
 > Task :app:generateReleaseResValues UP-TO-DATE
 > Task :app:mapReleaseSourceSetPaths UP-TO-DATE
@@ -18,15 +18,14 @@ Daemon will be stopped at the end of the build
 > Task :app:mergeReleaseResources UP-TO-DATE
 > Task :app:packageReleaseResources UP-TO-DATE
 > Task :app:parseReleaseLocalResources UP-TO-DATE
-> Task :app:createReleaseCompatibleScreenManifests UP-TO-DATE
+> Task :app:createReleaseCompatibleScreenManifests
 > Task :app:extractDeepLinksRelease UP-TO-DATE
-> Task :app:processReleaseMainManifest UP-TO-DATE
-> Task :app:processReleaseManifest UP-TO-DATE
-> Task :app:processReleaseManifestForPackage UP-TO-DATE
-> Task :app:processReleaseResources UP-TO-DATE
+> Task :app:processReleaseMainManifest
+> Task :app:processReleaseManifest
 > Task :app:javaPreCompileRelease UP-TO-DATE
 > Task :app:desugarReleaseFileDependencies UP-TO-DATE
 > Task :app:mergeReleaseStartupProfile UP-TO-DATE
+> Task :app:processReleaseManifestForPackage
 > Task :app:mergeExtDexRelease UP-TO-DATE
 > Task :app:mergeReleaseArtProfile UP-TO-DATE
 > Task :app:mergeReleaseShaders UP-TO-DATE
@@ -34,9 +33,8 @@ Daemon will be stopped at the end of the build
 > Task :app:generateReleaseAssets UP-TO-DATE
 > Task :app:mergeReleaseAssets UP-TO-DATE
 > Task :app:compressReleaseAssets UP-TO-DATE
-> Task :app:extractReleaseVersionControlInfo UP-TO-DATE
+> Task :app:extractReleaseVersionControlInfo
 > Task :app:extractProguardFiles UP-TO-DATE
-> Task :app:optimizeReleaseResources UP-TO-DATE
 > Task :app:collectReleaseDependencies UP-TO-DATE
 > Task :app:sdkReleaseDependencyData UP-TO-DATE
 > Task :app:validateSigningRelease UP-TO-DATE
@@ -44,7 +42,7 @@ Daemon will be stopped at the end of the build
 > Task :app:writeReleaseSigningConfigVersions UP-TO-DATE
 > Task :app:preDebugBuild UP-TO-DATE
 > Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
-> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :app:generateDebugBuildConfig
 > Task :app:checkDebugAarMetadata UP-TO-DATE
 > Task :app:generateDebugResValues UP-TO-DATE
 > Task :app:mapDebugSourceSetPaths UP-TO-DATE
@@ -52,20 +50,22 @@ Daemon will be stopped at the end of the build
 > Task :app:mergeDebugResources UP-TO-DATE
 > Task :app:packageDebugResources UP-TO-DATE
 > Task :app:parseDebugLocalResources UP-TO-DATE
-> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests
 > Task :app:extractDeepLinksDebug UP-TO-DATE
-> Task :app:processDebugMainManifest UP-TO-DATE
-> Task :app:processDebugManifest UP-TO-DATE
-> Task :app:processDebugManifestForPackage UP-TO-DATE
-> Task :app:processDebugResources UP-TO-DATE
-> Task :app:compileReleaseKotlin
-> Task :app:compileDebugKotlin
-w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/login/WebLoginActivity.kt:93:60 'static field SOFT_INPUT_ADJUST_RESIZE: Int' is deprecated. Deprecated in Java.
-w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/platform/TiebaLikeTask.kt:49:58 Condition is always 'true'.
+> Task :app:processReleaseResources
+> Task :app:processDebugMainManifest
+> Task :app:optimizeReleaseResources
+> Task :app:processDebugManifest
+> Task :app:processDebugManifestForPackage
+> Task :app:processDebugResources
 
 > Task :app:compileReleaseKotlin
 w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/login/WebLoginActivity.kt:93:60 'static field SOFT_INPUT_ADJUST_RESIZE: Int' is deprecated. Deprecated in Java.
-w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/platform/TiebaLikeTask.kt:49:58 Condition is always 'true'.
+w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/platform/TiebaLikeTask.kt:56:58 Condition is always 'true'.
+
+> Task :app:compileDebugKotlin
+w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/login/WebLoginActivity.kt:93:60 'static field SOFT_INPUT_ADJUST_RESIZE: Int' is deprecated. Deprecated in Java.
+w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2-3/outputs/OneTapCheckIn/app/src/main/java/cn/onetap/checkin/platform/TiebaLikeTask.kt:56:58 Condition is always 'true'.
 
 > Task :app:compileReleaseJavaWithJavac
 > Task :app:dexBuilderRelease
@@ -73,8 +73,8 @@ w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2
 > Task :app:generateReleaseLintVitalReportModel
 > Task :app:mergeDexRelease
 > Task :app:compileReleaseArtProfile
-> Task :app:processReleaseJavaRes
-> Task :app:mergeReleaseJavaResource
+> Task :app:processReleaseJavaRes UP-TO-DATE
+> Task :app:mergeReleaseJavaResource UP-TO-DATE
 > Task :app:javaPreCompileDebug UP-TO-DATE
 > Task :app:compileDebugJavaWithJavac
 > Task :app:mergeDebugShaders UP-TO-DATE
@@ -83,11 +83,10 @@ w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2
 > Task :app:mergeDebugAssets UP-TO-DATE
 > Task :app:compressDebugAssets UP-TO-DATE
 > Task :app:desugarDebugFileDependencies UP-TO-DATE
-> Task :app:lintVitalAnalyzeRelease
 > Task :app:dexBuilderDebug
 > Task :app:mergeDebugGlobalSynthetics UP-TO-DATE
-> Task :app:processDebugJavaRes
-> Task :app:mergeDebugJavaResource
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :app:mergeDebugJavaResource UP-TO-DATE
 > Task :app:checkDebugDuplicateClasses UP-TO-DATE
 > Task :app:mergeExtDexDebug UP-TO-DATE
 > Task :app:mergeLibDexDebug UP-TO-DATE
@@ -103,6 +102,7 @@ w: file:///C:/Users/Administrator/Documents/Codex/2026-10-17/android-app-apk-1-2
 > Task :app:assembleDebug
 > Task :app:bundleDebugClassesToRuntimeJar
 > Task :app:bundleDebugClassesToCompileJar
+> Task :app:lintVitalAnalyzeRelease
 > Task :app:compileDebugUnitTestKotlin
 > Task :app:preDebugUnitTestBuild UP-TO-DATE
 > Task :app:javaPreCompileDebugUnitTest UP-TO-DATE
@@ -160,5 +160,5 @@ Wrote HTML report to file:///C:/Users/Administrator/Documents/Codex/2026-10-17/a
 
 > Task :app:lintRelease
 
-BUILD SUCCESSFUL in 5m 6s
-126 actionable tasks: 34 executed, 92 up-to-date
+BUILD SUCCESSFUL in 3m 26s
+126 actionable tasks: 44 executed, 82 up-to-date
