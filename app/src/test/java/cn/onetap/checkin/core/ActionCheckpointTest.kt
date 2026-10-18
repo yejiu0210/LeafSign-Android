@@ -49,4 +49,13 @@ class ActionCheckpointTest {
             assertEquals("error_code=4",Rules.safeDiagnostic(it))
         }
     }
+    @Test fun signSelfCheckDiagnosticAcceptsOnlyExactFixedState() {
+        listOf("tieba forumGuide is_sign=1","tieba forumGuide is_sign=0").forEach {
+            assertEquals(it,Rules.safeDiagnostic(it))
+        }
+        listOf("tieba forumGuide is_sign=1 fixture-sensitive-value","tieba forumGuide is_sign=2",
+            "fixture-sensitive-value tieba forumGuide is_sign=0","tieba forumGuide owner_uid=123 is_sign=1").forEach {
+            assertEquals("",Rules.safeDiagnostic(it))
+        }
+    }
 }

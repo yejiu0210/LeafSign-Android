@@ -90,6 +90,7 @@ object Rules {
         return state.copy(accounts = state.accounts.filterNot { it.id == account.id } + account)
     }
     fun safeDiagnostic(value: String): String {
+        Regex("tieba forumGuide is_sign=[01]").matchEntire(value)?.let { return it.value }
         val tiebaDetail = Regex("tieba endpoint=pb_page reason=(?:thread_unavailable|verification|login|other|missing) thread_id=[1-9][0-9]{0,18} error_code=(?:-?[0-9]{1,10}|missing)")
             .matchEntire(value)?.value
         if (tiebaDetail != null) return tiebaDetail

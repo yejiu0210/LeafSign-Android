@@ -1,12 +1,12 @@
 {
-  "tests": 148.0,
+  "tests": 168.0,
   "failures": 0.0,
   "errors": 0.0,
   "skipped": 0.0,
   "suites": [
     {
       "name": "cn.onetap.checkin.core.ActionCheckpointTest",
-      "tests": 6,
+      "tests": 7,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -26,6 +26,13 @@
       "skipped": 0
     },
     {
+      "name": "cn.onetap.checkin.core.ResultPresentationTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
       "name": "cn.onetap.checkin.core.RetiredPlatformMigrationTest",
       "tests": 8,
       "failures": 0,
@@ -34,7 +41,7 @@
     },
     {
       "name": "cn.onetap.checkin.core.RunnerRulesTest",
-      "tests": 15,
+      "tests": 18,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -98,6 +105,13 @@
     {
       "name": "cn.onetap.checkin.platform.TiebaLikeTaskTest",
       "tests": 49,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "cn.onetap.checkin.platform.TiebaSignSelfCheckTest",
+      "tests": 13,
       "failures": 0,
       "errors": 0,
       "skipped": 0

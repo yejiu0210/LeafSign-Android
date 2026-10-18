@@ -173,9 +173,10 @@ class TiebaLikeTaskTest {
         api.onWrite={ assertEquals("like_sent",store.state.checkpoints.single().values["stage"]);assertEquals("1",store.state.checkpoints.single().values["likeAttempts"]) }
         val task=task(store,api)
         val result=task.execute(uid,bduss,tbs,target,listOf(forum))
-        assertEquals(TaskStatus.SUCCESS,result.status);assertEquals("经验待官方确认",result.experienceState)
+        assertEquals(TaskStatus.SUCCESS,result.status);assertEquals("",result.experienceState)
         assertEquals(listOf("0"),api.writes.map {it["op_type"]});assertEquals("complete",store.state.checkpoints.single().values["stage"])
         assertEquals(TaskStatus.ALREADY,task.query(uid,bduss,target)?.status)
+        assertEquals("",task.query(uid,bduss,target)?.experienceState)
         assertEquals(TaskStatus.ALREADY,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
         assertEquals(1,api.writes.size)
     }

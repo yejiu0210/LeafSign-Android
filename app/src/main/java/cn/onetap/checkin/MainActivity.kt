@@ -125,7 +125,7 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
                                     Column(verticalArrangement=Arrangement.spacedBy(3.dp)) {
                                         Text(listOf(t.game,t.label,t.server).filter{it.isNotBlank()}.distinct().joinToString(" · "))
                                         Text(if(t.bound&&t.id !in a.enabled)"已停用" else Rules.resultTitle(status,t.id),color=statusColor(status),style=MaterialTheme.typography.labelLarge)
-                                        if(r!=null&&t.id in a.enabled){Text(r.message,style=MaterialTheme.typography.bodySmall);if(r.experienceState.isNotBlank())Text("经验：${r.experienceState}",style=MaterialTheme.typography.bodySmall)}
+                                        if(r!=null&&t.id in a.enabled){Text(r.message,style=MaterialTheme.typography.bodySmall);val experience=ResultPresentation.experienceState(r);if(experience.isNotBlank())Text("经验：$experience",style=MaterialTheme.typography.bodySmall)}
                                     }
                                 }
                             }
@@ -141,9 +141,10 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
                             Text("${a.platform.title} · ${a.note.ifBlank { a.displayName }}",fontWeight=FontWeight.Bold)
                             Text("${a.displayName} · ID ${a.userId}")
                             Text("身份校验：${formatTime(a.checkedAt)}",style=MaterialTheme.typography.bodySmall)
-                            if(a.details.isNotBlank())Text(a.details,style=MaterialTheme.typography.bodySmall)
+                            val details=ResultPresentation.accountDetails(a)
+                            if(details.isNotBlank())Text(details,style=MaterialTheme.typography.bodySmall)
                             if(a.platform==Platform.TIEBA){
-                                Text("每个吧的随机点赞可单独勾选，默认关闭；每吧每天各选一帖，已赞则取消一次再赞。经验由贴吧判定。更新后先校验 / 刷新以载入。",style=MaterialTheme.typography.bodySmall)
+                                Text("每个吧的随机点赞可单独勾选，默认关闭；每吧每天各选一帖，已赞则取消一次再赞。确认点赞完成后即结束，不另行查询经验。更新后先校验 / 刷新以载入。",style=MaterialTheme.typography.bodySmall)
                                 FlowRow {
                                     TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=it.enabled+it.targets.filter{t->t.bound&&t.type=="forum"}.map{t->t.id})else it})}},enabled=!busy){Text("全选贴吧")}
                                     TextButton(onClick={mutate{s->s.copy(accounts=s.accounts.map{if(it.id==a.id)it.copy(enabled=it.enabled-it.targets.filter{t->t.type=="forum"}.map{t->t.id}.toSet())else it})}},enabled=!busy){Text("取消全部贴吧")}
@@ -172,7 +173,8 @@ private val pad=Modifier.fillMaxWidth().padding(horizontal=18.dp)
                         Text("${r.platform.title} · ${r.accountLabel}",fontWeight=FontWeight.SemiBold)
                         Text(r.task);Text("${formatTime(r.time)} · 周期 ${r.period}",style=MaterialTheme.typography.bodySmall)
                         Text(Rules.resultTitle(r.status,r.targetId),color=statusColor(r.status));Text(r.message,style=MaterialTheme.typography.bodySmall)
-                        if(r.experienceState.isNotBlank())Text("经验：${r.experienceState}",style=MaterialTheme.typography.bodySmall)
+                        val experience=ResultPresentation.experienceState(r)
+                        if(experience.isNotBlank())Text("经验：$experience",style=MaterialTheme.typography.bodySmall)
                         if(r.diagnostic.isNotBlank())Text("诊断：${r.diagnostic}",style=MaterialTheme.typography.bodySmall)
                     }}}
                 }

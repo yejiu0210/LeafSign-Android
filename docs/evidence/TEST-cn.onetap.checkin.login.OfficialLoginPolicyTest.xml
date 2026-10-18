@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.login.OfficialLoginPolicyTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:50:13.086Z" hostname="PC-20260405TBKV" time="0.006">
+<testsuite name="cn.onetap.checkin.login.OfficialLoginPolicyTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-18T01:15:16.654Z" hostname="PC-20260405TBKV" time="0.005">
   <properties/>
   <testcase name="mainFrameRejectsOtherPlatformAndLookalikeDomains" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.002"/>
   <testcase name="tokenBodyIsReadOnlyFromExactOfficialEndpoint" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.001"/>
-  <testcase name="officialStartPagesAndMobileSklandAreAllowed" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.0"/>
-  <testcase name="onlySubframesMayInitializeWithExactAboutBlank" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.001"/>
+  <testcase name="officialStartPagesAndMobileSklandAreAllowed" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.001"/>
+  <testcase name="onlySubframesMayInitializeWithExactAboutBlank" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.0"/>
   <testcase name="sdkIsInvokedOnlyInsideOfficialHypergryphAccountPage" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.0"/>
   <testcase name="transportRejectsCleartextCustomSchemesPortsAndCredentials" classname="cn.onetap.checkin.login.OfficialLoginPolicyTest" time="0.001"/>
   <system-out><![CDATA[]]></system-out>

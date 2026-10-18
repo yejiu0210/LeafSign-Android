@@ -6,9 +6,14 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 /** Per-forum ordinary signing and one opt-in daily like per forum; no paid msign or repair-sign. */
-class TiebaAdapter(private val store: StateStore? = null) : PlatformAdapter {
+class TiebaAdapter internal constructor(
+    private val store: StateStore?,
+    private val net: TiebaTransport,
+    private val pause: (Long) -> Unit
+) : PlatformAdapter {
+    constructor(store: StateStore? = null) : this(store, OfficialTiebaTransport(), { Thread.sleep(it) })
+
     override val platform = Platform.TIEBA
-    private val net = NetClient(setOf("tiebac.baidu.com", "tieba.baidu.com"))
     private var lastSignNanos = 0L
     private val likeTask by lazy { TiebaLikeTask(store, ::appRequest, pace = ::paceWrites) }
     private data class Session(val uid: String, val name: String, val tbs: String)
@@ -22,8 +27,10 @@ class TiebaAdapter(private val store: StateStore? = null) : PlatformAdapter {
             TiebaLikeTask.target(session.uid,"none","",false)
         ) else targets.flatMap { forum -> listOf(forum,TiebaLikeTask.target(session.uid,forum.metadata.getValue("forumId"),forum.metadata.getValue("forumName"))) }
         return Identity(session.uid,session.name,tasks,
-            "已校验百度 UID；已分页获取 ${targets.size} 个关注贴吧。每个吧可单独启用每日随机点赞一帖；已赞则此帖最多取消一次再赞。经验待官方确认。")
+            "已校验百度 UID；已分页获取 ${targets.size} 个关注贴吧。每个吧可单独启用每日随机点赞一帖；已赞则此帖最多取消一次再赞。点赞完成后记录任务完成，不额外查询经验到账。")
     }
+
+    override fun requiresFreshCompletionCheck(target: Target): Boolean = target.bound && target.type == "forum"
 
     override fun execute(credential: String, target: Target): TaskResult {
         if (target.type == "daily-like" || target.id.startsWith(TiebaLikeTask.TARGET_PREFIX)) {
@@ -42,7 +49,25 @@ class TiebaAdapter(private val store: StateStore? = null) : PlatformAdapter {
         paceWrites()
         val response = appRequest("/c/c/forum/sign", mapOf("BDUSS" to cookies.getValue("BDUSS"),
             "_client_version" to VERSION, "kw" to target.metadata.getValue("forumName"), "tbs" to session.tbs))
-        return parseSignResult(response)
+        val acknowledgement = parseSignResult(response)
+        if (acknowledgement.status in setOf(TaskStatus.EXPIRED, TaskStatus.MANUAL, TaskStatus.FAILED)) return acknowledgement
+        // A successful write acknowledgement alone is not a completed sign-in.
+        // Repeat only the independent read, allowing a short propagation delay.
+        var checked: TaskResult? = null
+        repeat(3) { attempt ->
+            if (attempt > 0) pause(1000)
+            checked = querySigned(cookies, target)
+            if (checked?.status == TaskStatus.ALREADY) {
+                val status = if (acknowledgement.status == TaskStatus.SUCCESS) TaskStatus.SUCCESS else TaskStatus.ALREADY
+                return TaskResult(status, "贴吧签到后自检通过，今日已签到",
+                    "tieba forumGuide is_sign=1")
+            }
+        }
+        val unsigned = checked?.status == TaskStatus.PENDING
+        return TaskResult(TaskStatus.UNKNOWN,
+            if (unsigned) "签到请求已提交，但自检仍显示今日未签到；未重复发送，请稍后重试自检"
+            else "签到请求已提交，但未能取得此吧的可靠签到状态；请稍后重试自检",
+            if (unsigned) "tieba forumGuide is_sign=0" else acknowledgement.diagnostic)
     }
 
     override fun query(credential: String, target: Target): TaskResult? {
@@ -60,7 +85,7 @@ class TiebaAdapter(private val store: StateStore? = null) : PlatformAdapter {
 
     private fun paceWrites() = synchronized(this) {
         val remaining = 5000L - (System.nanoTime() - lastSignNanos) / 1_000_000
-        if (lastSignNanos != 0L && remaining > 0) Thread.sleep(remaining)
+        if (lastSignNanos != 0L && remaining > 0) pause(remaining)
         lastSignNanos = System.nanoTime()
     }
 
@@ -71,8 +96,11 @@ class TiebaAdapter(private val store: StateStore? = null) : PlatformAdapter {
             // until the web identity independently matches the app-protocol identity.
             val identity = net.get("https://tieba.baidu.com/mo/q/newmoindex?need_user=1", webHeaders(cookies))
             if (identity.opt("no")?.toString()?.toIntOrNull() != 0) {
-                if (isManual(identity.optString("error")))
+                val message = identity.optString("error")
+                if (isManual(message))
                     throw AdapterException(TaskStatus.MANUAL, "贴吧要求手动验证，请前往官方入口")
+                if (isExpired(message))
+                    throw AdapterException(TaskStatus.EXPIRED, "贴吧网页登录失效，请重新官方登录并更新凭证")
                 return null
             }
             val webUid = identity.optJSONObject("data")?.optString("id")
@@ -90,6 +118,7 @@ class TiebaAdapter(private val store: StateStore? = null) : PlatformAdapter {
         if (errorCode(response) != 0) {
             val msg = response.optString("error_msg")
             if (isManual(msg)) throw AdapterException(TaskStatus.MANUAL, "贴吧要求手动验证，请前往官方入口", diagnostic(response))
+            if (isExpired(msg)) throw AdapterException(TaskStatus.EXPIRED, "贴吧网页登录失效，请重新官方登录并更新凭证", diagnostic(response))
             return null
         }
         val forums = response.optJSONArray("like_forum") ?: return null
@@ -97,7 +126,7 @@ class TiebaAdapter(private val store: StateStore? = null) : PlatformAdapter {
             val item = forums.optJSONObject(i) ?: continue
             if (item.optString("forum_id") != target.metadata["forumId"]) continue
             return when (item.opt("is_sign")?.toString()) {
-                "1", "true" -> TaskResult(TaskStatus.ALREADY, "贴吧当前状态确认今日已签到", "tieba forumGuide is_sign=1")
+                "1", "true" -> TaskResult(TaskStatus.ALREADY, "贴吧当前自检通过，今日已签到", "tieba forumGuide is_sign=1")
                 "0", "false" -> TaskResult(TaskStatus.PENDING, "贴吧当前状态确认今日尚未签到", "tieba forumGuide is_sign=0")
                 else -> null
             }
@@ -211,6 +240,8 @@ class TiebaAdapter(private val store: StateStore? = null) : PlatformAdapter {
         private fun errorCode(result: JSONObject): Int? = result.opt("error_code")?.toString()?.toIntOrNull()
         private fun diagnostic(result: JSONObject) = "tieba error_code=${errorCode(result) ?: "missing"}"
         private fun isManual(msg: String) = msg.contains("验证码") || msg.contains("安全验证") || msg.contains("频繁")
+        private fun isExpired(msg: String) = msg.contains("未登录") || msg.contains("请先登录") ||
+            msg.contains("登录失效") || msg.contains("登录过期") || msg.contains("BDUSS", true)
 
         /** aiotieba/helper/crypto/sign.py, Unlicense: sort raw key/value pairs then MD5 with APP_SALT. */
         internal fun signedFields(fields: Map<String, String>): Map<String, String> {
@@ -237,4 +268,16 @@ class TiebaAdapter(private val store: StateStore? = null) : PlatformAdapter {
             }
         }
     }
+}
+
+/** Internal transport seam for isolated protocol fixtures; production still uses the exact host allowlist. */
+internal interface TiebaTransport {
+    fun get(url: String, headers: Map<String, String>): JSONObject
+    fun postForm(url: String, fields: Map<String, String>, headers: Map<String, String> = emptyMap()): JSONObject
+}
+
+private class OfficialTiebaTransport : TiebaTransport {
+    private val client = NetClient(setOf("tiebac.baidu.com", "tieba.baidu.com"))
+    override fun get(url: String, headers: Map<String, String>) = client.get(url, headers)
+    override fun postForm(url: String, fields: Map<String, String>, headers: Map<String, String>) = client.postForm(url, fields, headers)
 }

@@ -43,6 +43,8 @@ interface PlatformAdapter {
     fun execute(credential: String, target: Target): TaskResult
     /** Read only. Return null when no reliable status endpoint is known. */
     fun query(credential: String, target: Target): TaskResult? = null
+    /** A local completion record cannot replace this task's current server check. */
+    fun requiresFreshCompletionCheck(target: Target): Boolean = false
 }
 
 class AdapterException(val status: TaskStatus, override val message: String, val diagnostic: String = "") : Exception(message)

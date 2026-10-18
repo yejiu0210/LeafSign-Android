@@ -14,12 +14,11 @@ internal class TiebaLikeTask(
 ) {
     companion object {
         const val TARGET_PREFIX = "tieba:like:"
-        private const val EXPERIENCE = "经验待官方确认"
         fun target(owner: String, forumId: String, forumName: String, available: Boolean = true) =
             Target("$TARGET_PREFIX$forumId", "daily-like", if(available) "${forumName}吧 · 每日随机点赞一帖" else "每日随机点赞一帖（尚未关注贴吧）", bound=available,
                 metadata=mapOf("ownerUserId" to owner, "forumId" to forumId, "forumName" to forumName,
                     "defaultEnabled" to "false", "resetZone" to "Asia/Shanghai", "resetHour" to "0",
-                    "resetVerified" to "false", "resetEvidence" to "工具本地每账号每吧每日限一帖；平台经验和精确重置时间未确认"))
+                    "resetVerified" to "false", "resetEvidence" to "工具本地每账号每吧每日限一帖；平台精确重置时间未确认"))
     }
     private data class Context(val accountId: String, val target: Target, val period: String)
     private data class Step(val post: TiebaLikeCodec.Post, val stage: String, val likes: Int, val unlikes: Int, val cuid: String,
@@ -91,7 +90,7 @@ internal class TiebaLikeTask(
     }
     private fun read(owner: String, bduss: String, post: TiebaLikeCodec.Post): Boolean = TiebaLikeCodec.liked(
         request("/c/f/pb/page",TiebaLikeCodec.readFields(bduss)+mapOf("kz" to post.threadId,"pn" to "1","rn" to "2","r" to "0","lz" to "0")),owner,post)
-    private fun result(status: TaskStatus, message: String) = TaskResult(status,message,experienceState=EXPERIENCE)
+    private fun result(status: TaskStatus, message: String) = TaskResult(status,message)
     private fun complete(context: Context, step: Step): TaskResult {
         save(context,step.copy(stage="complete"))
         return result(TaskStatus.SUCCESS,"已确认${step.post.forumName}吧帖子 ${step.post.threadId} 点赞生效；此吧今日仅处理这一帖")

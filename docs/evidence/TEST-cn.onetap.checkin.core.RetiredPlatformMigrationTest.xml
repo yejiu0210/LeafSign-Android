@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.core.RetiredPlatformMigrationTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:50:11.687Z" hostname="PC-20260405TBKV" time="0.841">
+<testsuite name="cn.onetap.checkin.core.RetiredPlatformMigrationTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-10-18T01:15:15.478Z" hostname="PC-20260405TBKV" time="0.538">
   <properties/>
-  <testcase name="migrationIsIdempotentAndDoesNotMutateInput" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.029"/>
-  <testcase name="nonRetiredUnknownAccountPlatformStillFailsWithoutSilentlyClearingState" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.015"/>
-  <testcase name="retiredAccountReferencesAreRemovedEvenWithoutLegacyPlatformAndTargetFields" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.007"/>
-  <testcase name="rewriteRetainsUnknownFieldsAndDoesNotTruncateExistingHistory" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.751"/>
-  <testcase name="mixedLegacyStateKeepsEveryOtherAccountSettingHistoryAndContinuation" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.003"/>
-  <testcase name="orphanRetiredRecordsAndCheckpointsAreRemovedByExactPlatformOrTargetPrefix" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.001"/>
-  <testcase name="retiredOnlyStateBecomesEmptyWhileKeepingSettings" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.0"/>
-  <testcase name="nonRetiredUnknownRecordPlatformStillFailsWithoutSilentlyDroppingHistory" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.028"/>
+  <testcase name="migrationIsIdempotentAndDoesNotMutateInput" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.016"/>
+  <testcase name="nonRetiredUnknownAccountPlatformStillFailsWithoutSilentlyClearingState" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.003"/>
+  <testcase name="retiredAccountReferencesAreRemovedEvenWithoutLegacyPlatformAndTargetFields" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.002"/>
+  <testcase name="rewriteRetainsUnknownFieldsAndDoesNotTruncateExistingHistory" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.5"/>
+  <testcase name="mixedLegacyStateKeepsEveryOtherAccountSettingHistoryAndContinuation" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.008"/>
+  <testcase name="orphanRetiredRecordsAndCheckpointsAreRemovedByExactPlatformOrTargetPrefix" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.002"/>
+  <testcase name="retiredOnlyStateBecomesEmptyWhileKeepingSettings" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.001"/>
+  <testcase name="nonRetiredUnknownRecordPlatformStillFailsWithoutSilentlyDroppingHistory" classname="cn.onetap.checkin.core.RetiredPlatformMigrationTest" time="0.003"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

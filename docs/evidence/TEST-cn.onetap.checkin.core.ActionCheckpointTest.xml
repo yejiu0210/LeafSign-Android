@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.core.ActionCheckpointTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:50:10.872Z" hostname="PC-20260405TBKV" time="0.198">
+<testsuite name="cn.onetap.checkin.core.ActionCheckpointTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-10-18T01:15:14.569Z" hostname="PC-20260405TBKV" time="0.303">
   <properties/>
-  <testcase name="optionalWriteTaskIsNotEnabledByDefault" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.099"/>
-  <testcase name="onlyFixedPublicTiebaIdentityDiagnosticsSurviveRedaction" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.057"/>
-  <testcase name="previousVersionsWithoutCheckpointsDecodeAsEmpty" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.011"/>
-  <testcase name="deletingOneAccountRemovesOnlyItsCheckpointAndHistory" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.005"/>
-  <testcase name="tiebaDetailDiagnosticKeepsOnlyWhitelistedPublicContext" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.005"/>
-  <testcase name="sameTaskAndPeriodKeepDistinctAccountContinuation" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.016"/>
+  <testcase name="optionalWriteTaskIsNotEnabledByDefault" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.127"/>
+  <testcase name="onlyFixedPublicTiebaIdentityDiagnosticsSurviveRedaction" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.08"/>
+  <testcase name="previousVersionsWithoutCheckpointsDecodeAsEmpty" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.048"/>
+  <testcase name="signSelfCheckDiagnosticAcceptsOnlyExactFixedState" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.003"/>
+  <testcase name="deletingOneAccountRemovesOnlyItsCheckpointAndHistory" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.027"/>
+  <testcase name="tiebaDetailDiagnosticKeepsOnlyWhitelistedPublicContext" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.009"/>
+  <testcase name="sameTaskAndPeriodKeepDistinctAccountContinuation" classname="cn.onetap.checkin.core.ActionCheckpointTest" time="0.006"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

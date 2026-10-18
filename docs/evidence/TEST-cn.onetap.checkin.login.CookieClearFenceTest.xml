@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="cn.onetap.checkin.login.CookieClearFenceTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-17T09:50:13.038Z" hostname="PC-20260405TBKV" time="0.03">
+<testsuite name="cn.onetap.checkin.login.CookieClearFenceTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-18T01:15:16.596Z" hostname="PC-20260405TBKV" time="0.035">
   <properties/>
   <testcase name="waiterTimeoutDoesNotCancelOrReplacePendingPlatformClear" classname="cn.onetap.checkin.login.CookieClearFenceTest" time="0.023"/>
-  <testcase name="nextCompletedSessionStartsItsOwnFreshClearAndFailureIsObservable" classname="cn.onetap.checkin.login.CookieClearFenceTest" time="0.003"/>
-  <testcase name="cancellationOfOldActivityDoesNotLetNewActivityOvertakeClear" classname="cn.onetap.checkin.login.CookieClearFenceTest" time="0.003"/>
+  <testcase name="nextCompletedSessionStartsItsOwnFreshClearAndFailureIsObservable" classname="cn.onetap.checkin.login.CookieClearFenceTest" time="0.006"/>
+  <testcase name="cancellationOfOldActivityDoesNotLetNewActivityOvertakeClear" classname="cn.onetap.checkin.login.CookieClearFenceTest" time="0.006"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

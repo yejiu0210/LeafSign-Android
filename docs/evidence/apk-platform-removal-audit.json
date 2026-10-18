@@ -9,5 +9,5 @@
   "forbiddenMarkerHits": [],
   "passed": true,
   "legacyStateMarkersRetainedForMigration": true,
-  "check": "release DEX only; not device execution"
+  "check": "0.4.5 release DEX only; not device execution"
 }

@@ -18,9 +18,11 @@ class RunnerRulesTest {
         var writes=0
         var validateAction:(String)->Identity={c->Identity(c,c,listOf(target("ak",c),target("ef",c)))}
         var queryAction:(String,Target)->TaskResult?={_,_->null}
+        var freshCheckRequired=false
         var action:(String,Target)->TaskResult={_,_->TaskResult(TaskStatus.SUCCESS,"test fixture")}
         override fun validate(credential:String)=validateAction(credential)
         override fun query(credential:String,target:Target)=queryAction(credential,target)
+        override fun requiresFreshCompletionCheck(target:Target)=freshCheckRequired
         override fun execute(credential:String,target:Target):TaskResult {writes++;return action(credential,target)}
     }
     companion object {private fun target(id:String,owner:String)=Target(id,id,id,metadata=mapOf("ownerUserId" to owner))}
@@ -89,6 +91,35 @@ class RunnerRulesTest {
         runner.run();runner.run();assertEquals(2,adapter.writes)
         store.update{s->s.copy(records=s.records.map{if(it.targetId=="ak")it.copy(status=TaskStatus.UNKNOWN)else it})}
         runner.run(true);assertEquals(3,adapter.writes)
+    }
+    @Test fun requiredFreshCheckCannotReuseLocalSuccessWhenReadIsUnavailable()=runBlocking {
+        val a=account("main").copy(enabled=setOf("ak"));val adapter=FakeAdapter()
+        val store=MemoryStore(AppState(accounts=listOf(a)));val runner=Runner(store,mapOf(Platform.SKLAND to adapter))
+        assertEquals(1,runner.run())
+        adapter.freshCheckRequired=true
+        assertEquals(0,runner.run())
+        assertEquals(1,adapter.writes)
+        assertEquals(TaskStatus.UNKNOWN,store.value.records.last().status)
+        assertEquals(TaskStatus.SUCCESS,store.value.records.first().status)
+        assertEquals(0,runner.run(true))
+        assertEquals(1,adapter.writes)
+        assertEquals(TaskStatus.UNKNOWN,store.value.records.last().status)
+    }
+    @Test fun requiredFreshCheckAcceptsServerCompletionWithoutAnotherWrite()=runBlocking {
+        val a=account("main").copy(enabled=setOf("ak"));val adapter=FakeAdapter()
+        val store=MemoryStore(AppState(accounts=listOf(a)));val runner=Runner(store,mapOf(Platform.SKLAND to adapter))
+        runner.run();adapter.freshCheckRequired=true
+        adapter.queryAction={_,_->TaskResult(TaskStatus.ALREADY,"server checked fixture")}
+        assertEquals(1,runner.run())
+        assertEquals(1,adapter.writes);assertEquals(TaskStatus.ALREADY,store.value.records.last().status)
+    }
+    @Test fun freshUnsignedStateOverridesOldCompletionAndAllowsExecution()=runBlocking {
+        val a=account("main").copy(enabled=setOf("ak"));val adapter=FakeAdapter()
+        val store=MemoryStore(AppState(accounts=listOf(a)));val runner=Runner(store,mapOf(Platform.SKLAND to adapter))
+        runner.run();adapter.freshCheckRequired=true
+        adapter.queryAction={_,_->TaskResult(TaskStatus.PENDING,"server unsigned fixture")}
+        assertEquals(1,runner.run())
+        assertEquals(2,adapter.writes);assertEquals(TaskStatus.SUCCESS,store.value.records.last().status)
     }
     @Test fun unfinishedRecordsRecoverAsInterrupted() {
         val a=account("main");val r=Record(accountId=a.id,platform=a.platform,accountLabel=a.note,targetId="ak",task="ak",period="x",status=TaskStatus.RUNNING,message="fixture")

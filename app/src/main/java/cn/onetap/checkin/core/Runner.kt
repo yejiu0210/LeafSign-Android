@@ -49,10 +49,15 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
                     val result = stopAccount ?: if(target.id !in currentTargetIds) TaskResult(TaskStatus.UNBOUND,"此目标已不在当前账号的绑定或关注列表，未执行；请刷新账号") else try {
                         val known = readWithRetry { adapter.query(currentCredential(account),target) }
                         currentCoroutineContext().ensureActive()
+                        val prior=Rules.latest(snapshot,account,target)
+                        val freshCheckRequired=adapter.requiresFreshCompletionCheck(target)
+                        val priorCompletion=if(freshCheckRequired) snapshot.records.any {
+                            it.accountId==account.id && it.targetId==target.id && it.period==record.period && Rules.completed(it.status)
+                        } else Rules.completed(prior?.status?:TaskStatus.PENDING)
                         if (known != null && known.status != TaskStatus.PENDING) known
-                        else if(known==null && Rules.completed(Rules.latest(snapshot,account,target)?.status?:TaskStatus.PENDING)) {
-                            val prior=Rules.latest(snapshot,account,target)!!
-                            TaskResult(prior.status,"当前本地周期内已确认完成；平台无可靠只读查询，未重复发送",prior.diagnostic,prior.experienceState)
+                        else if(known==null && priorCompletion) {
+                            if(freshCheckRequired) TaskResult(TaskStatus.UNKNOWN,"本次签到自检未能确认；保留历史记录，未重复发送签到，请稍后重试自检")
+                            else TaskResult(prior!!.status,"当前本地周期内已确认完成；平台无可靠只读查询，未重复发送",prior.diagnostic,prior.experienceState)
                         } else executeWithReconciliation(adapter,account,target)
                     } catch(e: CancellationException) { finish(record,TaskResult(TaskStatus.INTERRUPTED,"任务被中断，结果待确认")); throw e }
                       catch(e: Exception) { failure(e,account.credential) }
