@@ -1,10 +1,28 @@
-# 一键签到
+<div align="center">
+
+<img src="docs/assets/banner.svg" alt="一叶签（LeafSign）：一个按钮完成每日签到" width="100%">
 
 个人使用的原生 Android 签到应用：网易云音乐、百度贴吧、森空岛、哔哩哔哩，一个按钮完成每日任务。
 
-Kotlin / Jetpack Compose，Android 8.0（API 26）以上。完全本地运行，平台凭证只发送到适配器内列出的官方域名；没有自建服务器、公共中转，也不需要 Root 或无障碍权限。所有平台都走真实 HTTP 适配器，生产代码里没有模拟成功的分支。
+![Android](https://img.shields.io/badge/Android-8.0+-34A853?style=flat-square&logo=android&logoColor=white)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.1.20-7F52FF?style=flat-square&logo=kotlin&logoColor=white)
+![Jetpack Compose](https://img.shields.io/badge/Jetpack_Compose-UI-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)
+![本地运行](https://img.shields.io/badge/运行-完全本地-0D9488?style=flat-square)
+![License](https://img.shields.io/badge/License-MIT-F59E0B?style=flat-square)
 
 [支持平台](#支持平台) · [安装](#安装) · [使用](#使用) · [凭证与隐私](#凭证与隐私) · [结果说明](#结果说明) · [后台任务](#可选后台任务) · [构建](#构建) · [文档](#文档) · [更新记录](docs/CHANGELOG.md)
+
+</div>
+
+| 完全本地 | 只连官方 | 结果可信 |
+| :---: | :---: | :---: |
+| 没有自建服务器、公共中转，<br>不需要 Root 或无障碍权限 | 平台凭证只发送到<br>适配器内列出的官方域名 | 所有平台都走真实 HTTP 适配器，<br>生产代码里没有模拟成功的分支 |
+
+Kotlin / Jetpack Compose，Android 8.0（API 26）以上。
+
+> 「一叶签」原名「一键签到」，取自作者名字里的「葉」。包名 `cn.onetap.checkin` 与仓库名沿用旧称，不影响覆盖升级；0.4.5 及更早的安装包里仍显示旧名，应用内名称从下一个版本起更新。
+
+## 当前状态
 
 | 当前版本 | 下载 | 验证状态 |
 | --- | --- | --- |
@@ -122,3 +140,7 @@ Kotlin / Jetpack Compose，Android 8.0（API 26）以上。完全本地运行，
 ## 许可证
 
 本项目新写的代码采用 [MIT](LICENSE)；协议参考的上游许可证保留在各接入文档中。
+
+<div align="center">
+<sub>一叶签 LeafSign · 个人使用，不上架应用商店 · <a href="#readme">回到顶部</a></sub>
+</div>
