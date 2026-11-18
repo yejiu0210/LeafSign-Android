@@ -20,25 +20,25 @@
 
 Kotlin / Jetpack Compose，Android 8.0（API 26）以上。
 
-> 「一叶签」原名「一键签到」，取自作者名字里的「葉」。包名 `cn.onetap.checkin` 与仓库名沿用旧称，不影响覆盖升级；0.4.5 及更早的安装包里仍显示旧名，应用内名称从下一个版本起更新。
+> 「一叶签」原名「一键签到」，取自作者名字里的「葉」。包名 `cn.onetap.checkin` 与仓库名沿用旧称，不影响覆盖升级。
 
 ## 当前状态
 
 | 当前版本 | 下载 | 验证状态 |
 | --- | --- | --- |
-| **0.4.5**（versionCode 9） | [Releases](https://github.com/yejiu0210/one-tap-checkin-android/releases)（私有仓库，需有权限的账号登录） | 原有四平台签到：用户于 2026-10-17 报告真机通过；贴吧自检与点赞待本人覆盖安装验收。详见 [verification.md](docs/verification.md) |
+| **0.5.2**（versionCode 12） | [Releases](https://github.com/yejiu0210/one-tap-checkin-android/releases)（私有仓库，需有权限的账号登录） | 单元测试 316 项通过、Lint 无错误（2026-11-14）；并发签到、准点定时、Shizuku 守护、扫码登录与云贝 / 大积分签到待本人真机验收。0.4.5 及之前的验证见 [verification.md](docs/verification.md) |
 
 ## 支持平台
 
 | 平台 | 执行的任务 | 前提条件 | 接入文档 |
 | --- | --- | --- | --- |
-| 网易云音乐 | 「黑胶乐签」（两步请求后需服务端今日状态确认） | 资格以官方为准，不引导购买会员 | [netease-vip](docs/integration-netease-vip.md) |
+| 网易云音乐 | 「黑胶乐签」（两步请求后需服务端今日状态确认）；「云贝签到」 | 黑胶乐签资格以官方为准，不引导购买会员；云贝签到任何账号可用 | [netease-vip](docs/integration-netease-vip.md) |
 | 百度贴吧 | 已选关注吧签到 + 服务端自检；可选每吧每日随机点赞一帖 | — | [签到](docs/integration-music-tieba.md) · [点赞](docs/integration-tieba-like.md) |
 | 森空岛 | 明日方舟、明日方舟：终末地每日签到，支持主账号 + 分身多账号、按角色和区服选择 | 已绑定游戏角色 | [skland](docs/integration-skland.md) |
-| 哔哩哔哩 | [会员中心等级加速包](https://big.bilibili.com/mobile/index?location=drawExperienceModule) | 有效大会员、LV1 以上、**手动在官方观看视频一分钟** | [bilibili](docs/integration-bilibili.md) |
+| 哔哩哔哩 | [会员中心等级加速包](https://big.bilibili.com/mobile/index?location=drawExperienceModule)；大会员「大积分」每日签到 | 有效大会员；等级加速包另需 LV1 以上、**手动在官方观看视频一分钟** | [bilibili](docs/integration-bilibili.md) |
 
 > [!NOTE]
-> 只执行已选的签到和用户明确要求的每吧每日一次点赞。不做自动评论、刷播放、投币、兑换、购买、付费补签、积分签到或直播签到，也不会购买、续费或使用付费资源。
+> 只执行已选的签到和用户明确要求的每吧每日一次点赞。应用户要求加入网易云云贝签到与 B 站大积分签到（每日一次的官方签到，不做积分兑换）。不做自动评论、刷播放、投币、兑换、购买、付费补签或直播签到，也不会购买、续费或使用付费资源。
 
 ## 安装
 
@@ -49,7 +49,7 @@ Kotlin / Jetpack Compose，Android 8.0（API 26）以上。
 
 **添加账号**
 
-1. 打开「账号 → 添加账号」，选择平台、填写备注，点「官方网页登录并自动导入」。
+1. 打开「账号 → 添加账号」，选择平台、填写备注，点「用官方 App 扫码登录（推荐）」，再点「打开 App 确认登录」，在官方 App（可选分身）里确认；跳转不了时二维码会存进相册，在 App 的「扫一扫 → 相册」里选图即可。也可以用备用的「官方网页登录并自动导入」。
 2. 在内嵌官网完成登录和官方验证码，检测到授权后会自动校验并保存。如果没有自动返回，点「登录完成，检测账号」。
 3. 保存后核对昵称、ID、角色或关注的贴吧。同一平台 ID 不能重复添加。
 
@@ -102,13 +102,15 @@ Kotlin / Jetpack Compose，Android 8.0（API 26）以上。
 
 ## 可选后台任务
 
-- 先在前台完成至少一项平台明确确认的签到，设置页才允许开启后台任务；默认关闭。
-- 使用 WorkManager（需联网），约每 24 小时执行一次，首次时间按北京时间 HH:mm 设置。不保证准点，可能受省电策略、厂商限制和任务时长限制影响；被系统强制停止后需要重新打开应用。
-- 开启通知需要授予通知权限。后台只补跑当天，不补历史，不消耗补签资源。
+- 先在前台完成至少一项平台明确确认的签到，设置页才允许开启「每日自动签到」；默认关闭。时间按北京时间设置。
+- **多层保障**：精确闹钟到点唤醒（默认「闹钟模式」，状态栏会有闹钟图标）→ 前台服务执行，通知栏显示进度并保留结果；开机、应用更新、修改系统时间后自动重排，错过时间会补跑当天；每小时一次的备份任务兜底。多个触发同时到达时只执行一次。
+- **准点运行检查**（设置页）：精确闹钟权限、忽略电池优化、通知权限、厂商自启动 / 后台运行。可用「1 分钟后测试一次」验证整条链路，并查看最近 20 次触发记录。
+- **Shizuku 增强（推荐国产 ROM 使用）**：安装并启动 [Shizuku](https://shizuku.rikka.app/zh-hans/) 后授权本应用，可「一键保活」，并开启「Shizuku 守护唤醒」——在 Shizuku 进程中常驻定时器，应用被杀或被强行停止后到点仍会拉起签到。手机重启后需在 Shizuku 中重新启动服务（已 Root 的设备会自动启动）。
+- 后台只补跑当天，不补历史，不消耗补签资源。
 
 ## 构建
 
-固定工具链：JDK 17、Gradle 8.13、Android Gradle Plugin 8.11.1、Kotlin / Compose 编译插件 2.1.20、Compose BOM 2025.04.01、compile / target SDK 36、Build Tools 35.0.0。依赖来自 Google Maven / Maven Central，仓库自带 Gradle Wrapper 及校验值。
+固定工具链：JDK 17（需标准 OpenJDK 发行版，如 Temurin；Oracle GraalVM 的 jlink 与 AGP 不兼容）、Gradle 8.13、Android Gradle Plugin 8.11.1、Kotlin / Compose 编译插件 2.1.20、Compose BOM 2025.04.01、compile / target SDK 36、Build Tools 35.0.0。依赖来自 Google Maven / Maven Central，仓库自带 Gradle Wrapper 及校验值。
 
 用 Android Studio 导入此目录并安装 SDK 36 与 Build Tools 35.0.0；或在 Windows PowerShell 执行：
 

@@ -15,15 +15,18 @@ class RunnerRulesTest {
     }
     private class FakeAdapter:PlatformAdapter {
         override val platform=Platform.SKLAND
-        var writes=0
+        private val writeCount=java.util.concurrent.atomic.AtomicInteger()
+        val writes get()=writeCount.get()
         var validateAction:(String)->Identity={c->Identity(c,c,listOf(target("ak",c),target("ef",c)))}
         var queryAction:(String,Target)->TaskResult?={_,_->null}
         var freshCheckRequired=false
+        var order:(Target)->Int={0}
         var action:(String,Target)->TaskResult={_,_->TaskResult(TaskStatus.SUCCESS,"test fixture")}
         override fun validate(credential:String)=validateAction(credential)
         override fun query(credential:String,target:Target)=queryAction(credential,target)
         override fun requiresFreshCompletionCheck(target:Target)=freshCheckRequired
-        override fun execute(credential:String,target:Target):TaskResult {writes++;return action(credential,target)}
+        override fun executionOrder(target:Target)=order(target)
+        override fun execute(credential:String,target:Target):TaskResult {writeCount.incrementAndGet();return action(credential,target)}
     }
     companion object {private fun target(id:String,owner:String)=Target(id,id,id,metadata=mapOf("ownerUserId" to owner))}
     private fun account(uid:String)=Account(platform=Platform.SKLAND,userId=uid,displayName=uid,note=uid,credential=uid,targets=listOf(target("ak",uid),target("ef",uid)),enabled=setOf("ak","ef"))
@@ -37,7 +40,7 @@ class RunnerRulesTest {
         val adapter=FakeAdapter().apply {validateAction={Identity("wrong","wrong",emptyList())}}
         val store=MemoryStore(AppState(accounts=listOf(account("main"))))
         Runner(store,mapOf(Platform.SKLAND to adapter)).run();assertEquals(0,adapter.writes)
-        assertTrue(store.value.records.all {it.status==TaskStatus.EXPIRED})
+        assertTrue(store.value.records.all {it.status==TaskStatus.INTERRUPTED && it.message.contains("账号身份校验") && it.message.contains("登录失效，请先更新凭证")})
     }
     @Test fun refreshedSessionIsSavedAndRereadAfterQueryAndForNextTarget()=runBlocking {
         val a=account("main");val store=MemoryStore(AppState(accounts=listOf(a)))
@@ -84,7 +87,9 @@ class RunnerRulesTest {
     @Test fun expiryStopsRemainingWritesForThatAccount()=runBlocking {
         val adapter=FakeAdapter().apply {action={_,_->TaskResult(TaskStatus.EXPIRED,"fixture")}}
         val store=MemoryStore(AppState(accounts=listOf(account("main"))));Runner(store,mapOf(Platform.SKLAND to adapter)).run()
-        assertEquals(1,adapter.writes);assertTrue(store.value.records.all{it.status==TaskStatus.EXPIRED})
+        assertEquals(1,adapter.writes)
+        assertEquals(1,store.value.records.count{it.status==TaskStatus.EXPIRED})
+        assertEquals(1,store.value.records.count{it.status==TaskStatus.INTERRUPTED && it.message.contains("登录失效，请先更新凭证")})
     }
     @Test fun completedTasksAreSkippedAndUnknownIsRetriable()=runBlocking {
         val adapter=FakeAdapter();val store=MemoryStore(AppState(accounts=listOf(account("main"))));val runner=Runner(store,mapOf(Platform.SKLAND to adapter))
@@ -159,5 +164,53 @@ class RunnerRulesTest {
         assertTrue(entered.await(3,TimeUnit.SECONDS))
         withTimeout(5000){job.cancelAndJoin()}
         assertEquals(0,adapter.writes);assertEquals(TaskStatus.INTERRUPTED,store.value.records.single().status)
+    }
+
+    @Test fun stablePriorityRunsAllSigningBeforeLikesAndSkippedLikesAreRetriable()=runBlocking {
+        val tasks = listOf(Target("like-a","daily-like","A吧点赞"), Target("sign-a","forum","A吧签到"),
+            Target("like-b","daily-like","B吧点赞"), Target("sign-b","forum","B吧签到"))
+        val a = account("main").copy(targets=tasks,enabled=tasks.map { it.id }.toSet())
+        val store = MemoryStore(AppState(accounts=listOf(a)))
+        val queries = mutableListOf<String>(); val writes = mutableListOf<String>()
+        val adapter = FakeAdapter().apply {
+            validateAction={Identity("main","main",tasks)}
+            order={if(it.type=="daily-like")1 else 0}
+            queryAction={_,t->queries+=t.id;null}
+            action={_,t->writes+=t.id;if(t.id=="like-a")TaskResult(TaskStatus.MANUAL,"已停止点赞","code=123") else TaskResult(TaskStatus.SUCCESS,"已签到")}
+        }
+        val runner=Runner(store,mapOf(Platform.SKLAND to adapter))
+        assertEquals(2,runner.run())
+        assertEquals(listOf("sign-a","sign-b","like-a"),writes)
+        assertEquals(writes,queries)
+        val trigger=store.value.records.single { it.targetId=="like-a" }
+        assertEquals(TaskStatus.MANUAL,trigger.status);assertEquals("已停止点赞",trigger.message)
+        val skipped=store.value.records.single { it.targetId=="like-b" }
+        assertEquals(TaskStatus.INTERRUPTED,skipped.status)
+        assertEquals("未执行：同账号的「A吧点赞」触发了平台验证，为避免加重风控已暂停；处理后点「仅重试失败 / 待确认项」补签",skipped.message)
+        assertEquals("",skipped.diagnostic)
+        adapter.action={_,t->writes+=t.id;TaskResult(TaskStatus.SUCCESS,"fixture")}
+        assertEquals(1,runner.run(true))
+        assertEquals(listOf("sign-a","sign-b","like-a","like-b"),writes)
+    }
+
+    @Test fun manualStopsOnlyItsExecutionGroupWhileExpiredStopsAllGroups()=runBlocking {
+        for(status in listOf(TaskStatus.MANUAL,TaskStatus.EXPIRED)) {
+            val tasks=listOf(Target("like","daily-like","点赞"),Target("first","forum","签到甲"),Target("second","forum","签到乙"))
+            val a=account("main").copy(targets=tasks,enabled=tasks.map { it.id }.toSet())
+            val store=MemoryStore(AppState(accounts=listOf(a)))
+            val calls=mutableListOf<String>()
+            val adapter=FakeAdapter().apply {
+                validateAction={Identity("main","main",tasks)}
+                order={if(it.type=="daily-like")1 else 0}
+                action={_,t->calls+=t.id;if(t.id=="first")TaskResult(status,"真实拒绝","code=42")else TaskResult(TaskStatus.SUCCESS,"完成")}
+            }
+            Runner(store,mapOf(Platform.SKLAND to adapter)).run()
+            assertEquals(if(status==TaskStatus.MANUAL)listOf("first","like")else listOf("first"),calls)
+            assertEquals(status,store.value.records.single { it.targetId=="first" }.status)
+            assertEquals(TaskStatus.INTERRUPTED,store.value.records.single { it.targetId=="second" }.status)
+            assertEquals(if(status==TaskStatus.MANUAL)TaskStatus.SUCCESS else TaskStatus.INTERRUPTED,
+                store.value.records.single { it.targetId=="like" }.status)
+            assertTrue(store.value.records.filter { it.status==TaskStatus.INTERRUPTED }.all { it.diagnostic.isEmpty() && it.message.contains("「签到甲」") })
+        }
     }
 }

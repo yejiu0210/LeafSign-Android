@@ -28,17 +28,17 @@ data class ThemePalette(
     companion object {
         fun resolve(mode: ThemeMode, systemDark: Boolean): ThemePalette = if (mode.isDark(systemDark)) {
             ThemePalette(
-                background = 0xFF101916.toInt(), surface = 0xFF17221E.toInt(),
-                onSurface = 0xFFE0E6E1.toInt(), onSurfaceVariant = 0xFFBDC9C1.toInt(),
-                primary = 0xFF79D8C6.toInt(), success = 0xFF79D8C6.toInt(),
-                warning = 0xFFF0C66A.toInt(), error = 0xFFFFB4AB.toInt()
+                background = 0xFF0F1117.toInt(), surface = 0xFF181B24.toInt(),
+                onSurface = 0xFFE6E8F0.toInt(), onSurfaceVariant = 0xFFA3A8B8.toInt(),
+                primary = 0xFFAAB4FF.toInt(), success = 0xFF5BD69A.toInt(),
+                warning = 0xFFF3C164.toInt(), error = 0xFFFF8A80.toInt()
             )
         } else {
             ThemePalette(
-                background = 0xFFF5F8F7.toInt(), surface = 0xFFF8FAF8.toInt(),
-                onSurface = 0xFF191D1B.toInt(), onSurfaceVariant = 0xFF404943.toInt(),
-                primary = 0xFF087F74.toInt(), success = 0xFF087F74.toInt(),
-                warning = 0xFF845800.toInt(), error = 0xFFBA1A1A.toInt()
+                background = 0xFFF3F5FA.toInt(), surface = 0xFFFFFFFF.toInt(),
+                onSurface = 0xFF1A1C24.toInt(), onSurfaceVariant = 0xFF5B6070.toInt(),
+                primary = 0xFF4C5FD5.toInt(), success = 0xFF1E9E61.toInt(),
+                warning = 0xFFB7791F.toInt(), error = 0xFFD93A3A.toInt()
             )
         }
     }

@@ -3,25 +3,59 @@ package cn.onetap.checkin.platform
 import cn.onetap.checkin.core.*
 import cn.onetap.checkin.core.Target
 import org.json.JSONObject
+import java.io.IOException
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 /** Per-forum ordinary signing and one opt-in daily like per forum; no paid msign or repair-sign. */
 class TiebaAdapter internal constructor(
     private val store: StateStore?,
     private val net: TiebaTransport,
-    private val pause: (Long) -> Unit
+    private val pause: (Long) -> Unit,
+    private val clock: () -> Long = { System.nanoTime() / 1_000_000 }
 ) : PlatformAdapter {
     constructor(store: StateStore? = null) : this(store, OfficialTiebaTransport(), { Thread.sleep(it) })
 
     override val platform = Platform.TIEBA
-    private var lastSignNanos = 0L
+    override val maxTargetConcurrency = 1
+    override fun executionOrder(target: Target): Int =
+        if (target.type == "daily-like" || target.id.startsWith(TiebaLikeTask.TARGET_PREFIX)) 1 else 0
+    private class WritePace { var last: Long? = null }
+    private val writePaces = ConcurrentHashMap<String, WritePace>()
     private val likeTask by lazy { TiebaLikeTask(store, ::appRequest, pace = ::paceWrites) }
     private data class Session(val uid: String, val name: String, val tbs: String)
+    private data class Cached<T>(val value: T, val at: Long)
+    private inner class ReadCache<T>(private val ttl: Long) {
+        private val entries = ConcurrentHashMap<String, Cached<T>>()
+        fun get(key: String): T? {
+            val entry = entries[key] ?: return null
+            return if (clock() - entry.at in 0 until ttl) entry.value else {
+                entries.remove(key, entry); null
+            }
+        }
+        fun put(key: String, value: T): T {
+            val now = clock()
+            entries.entries.removeIf { now - it.value.at !in 0 until ttl }
+            entries[key] = Cached(value, now)
+            return value
+        }
+        fun remove(key: String) { entries.remove(key) }
+    }
+    private val sessions = ReadCache<Session>(300_000)
+    private val webIdentities = ReadCache<String>(300_000)
+    private val followed = ReadCache<List<Target>>(300_000)
+    private val guides = ReadCache<Map<String, String>>(20_000)
+    // Cache keys contain only digests. STOKEN changes must invalidate independent web ownership checks.
+    private fun cacheKey(cookies: Map<String, String>, web: Boolean = false): String =
+        MessageDigest.getInstance("SHA-256").digest((cookies.getValue("BDUSS") +
+            if (web) "\u0000" + cookies["STOKEN"].orEmpty() else "").toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 255) }
 
     override fun validate(credential: String): Identity {
         val cookies = credentials(credential)
-        val session = login(cookies)
-        val targets = followedForums(cookies, session.uid)
+        invalidateWeb(cookies, identity = true)
+        val session = login(cookies, forceFresh = true)
+        val targets = followedForums(cookies, session.uid, forceFresh = true)
         val tasks=if(targets.isEmpty()) listOf(
             Target("tieba:none", "forum", "尚未关注贴吧", bound = false, metadata = mapOf("ownerUserId" to session.uid)),
             TiebaLikeTask.target(session.uid,"none","",false)
@@ -45,29 +79,58 @@ class TiebaAdapter internal constructor(
         checkOwner(session, target)
         val state = querySigned(cookies, target)
         if (state?.status == TaskStatus.ALREADY) return state
-        // Pacing, not captcha bypass: each account/target remains independently executable.
-        paceWrites()
-        val response = appRequest("/c/c/forum/sign", mapOf("BDUSS" to cookies.getValue("BDUSS"),
-            "_client_version" to VERSION, "kw" to target.metadata.getValue("forumName"), "tbs" to session.tbs))
-        val acknowledgement = parseSignResult(response)
-        if (acknowledgement.status in setOf(TaskStatus.EXPIRED, TaskStatus.MANUAL, TaskStatus.FAILED)) return acknowledgement
-        // A successful write acknowledgement alone is not a completed sign-in.
-        // Repeat only the independent read, allowing a short propagation delay.
-        var checked: TaskResult? = null
-        repeat(3) { attempt ->
-            if (attempt > 0) pause(1000)
-            checked = querySigned(cookies, target)
-            if (checked?.status == TaskStatus.ALREADY) {
-                val status = if (acknowledgement.status == TaskStatus.SUCCESS) TaskStatus.SUCCESS else TaskStatus.ALREADY
-                return TaskResult(status, "贴吧签到后自检通过，今日已签到",
-                    "tieba forumGuide is_sign=1")
-            }
+        return signAndCheck(cookies, session, target)
+    }
+
+    private fun signAndCheck(cookies: Map<String, String>, session: Session, target: Target,
+        previousFailure: String? = null): TaskResult {
+        paceWrites(session.uid)
+        // Even a timed-out write may have reached the server. Reconciliation must not use old PENDING.
+        invalidateWeb(cookies)
+        var writeFailure: String? = null
+        val acknowledgement = try {
+            parseSignResult(appRequest("/c/c/forum/sign", mapOf("BDUSS" to cookies.getValue("BDUSS"),
+                "_client_version" to VERSION, "kw" to target.metadata.getValue("forumName"), "tbs" to session.tbs)))
+        } catch (e: Exception) {
+            if (!isTransient(e)) throw e
+            val diagnostic = transportDiagnostic(e)
+            writeFailure = diagnostic
+            TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", diagnostic)
         }
-        val unsigned = checked?.status == TaskStatus.PENDING
-        return TaskResult(TaskStatus.UNKNOWN,
-            if (unsigned) "签到请求已提交，但自检仍显示今日未签到；未重复发送，请稍后重试自检"
-            else "签到请求已提交，但未能取得此吧的可靠签到状态；请稍后重试自检",
-            if (unsigned) "tieba forumGuide is_sign=0" else acknowledgement.diagnostic)
+        if (acknowledgement.status in setOf(TaskStatus.EXPIRED, TaskStatus.MANUAL, TaskStatus.FAILED)) return acknowledgement
+        val checked = checkAfterSign(cookies, target, writeFailure != null)
+        val diagnostic = writeFailure ?: previousFailure
+        if (checked?.status == TaskStatus.ALREADY) {
+            val status = if (acknowledgement.status == TaskStatus.SUCCESS) TaskStatus.SUCCESS else TaskStatus.ALREADY
+            return TaskResult(status, if (status == TaskStatus.SUCCESS) "签到成功" else "今日已签到",
+                diagnostic ?: checked.diagnostic)
+        }
+        if (writeFailure != null && previousFailure == null && checked?.status == TaskStatus.PENDING)
+            return signAndCheck(cookies, session, target, previousFailure = writeFailure)
+        return TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试",
+            diagnostic ?: checked?.diagnostic ?: acknowledgement.diagnostic)
+    }
+
+    private fun checkAfterSign(cookies: Map<String, String>, target: Target, ambiguousWrite: Boolean): TaskResult? {
+        var checked: TaskResult? = null
+        var transportFailure: TaskResult? = null
+        repeat(3) { attempt ->
+            if (attempt > 0) {
+                val baseDelay = if (ambiguousWrite || transportFailure != null) READ_RETRY_DELAY_MS else 400L
+                pause(baseDelay * attempt)
+            }
+            val state = try {
+                // The polling loop owns the retry budget after a write.
+                querySigned(cookies, target, forceFresh = true, retryReads = false)
+            } catch (e: IOException) {
+                if (Thread.currentThread().isInterrupted) throw e
+                TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", transportDiagnostic(e))
+            }
+            if (state?.status == TaskStatus.ALREADY) return state
+            if (state?.status == TaskStatus.UNKNOWN) transportFailure = state
+            checked = state
+        }
+        return checked ?: transportFailure
     }
 
     override fun query(credential: String, target: Target): TaskResult? {
@@ -83,69 +146,103 @@ class TiebaAdapter internal constructor(
         return querySigned(cookies, target)
     }
 
-    private fun paceWrites() = synchronized(this) {
-        val remaining = 5000L - (System.nanoTime() - lastSignNanos) / 1_000_000
-        if (lastSignNanos != 0L && remaining > 0) pause(remaining)
-        lastSignNanos = System.nanoTime()
+    internal fun paceWrites(uid: String) {
+        val pace = writePaces.computeIfAbsent(uid) { WritePace() }
+        synchronized(pace) {
+            pace.last?.let { last ->
+                val remaining = WRITE_INTERVAL_MS - (clock() - last)
+                if (remaining > 0) pause(remaining)
+            }
+            pace.last = clock()
+        }
     }
 
-    private fun querySigned(cookies: Map<String, String>, target: Target): TaskResult? {
+    private fun invalidateWeb(cookies: Map<String, String>, identity: Boolean = false) {
+        val key = cacheKey(cookies, web = true)
+        if (identity) webIdentities.remove(key)
+        guides.remove(key)
+    }
+
+    private fun querySigned(cookies: Map<String, String>, target: Target, forceFresh: Boolean = false,
+        retryReads: Boolean = true): TaskResult? {
+        val key = cacheKey(cookies, web = true)
+        if (forceFresh) invalidateWeb(cookies)
         // Current upstream caps forumGuide at 200. Absence is never evidence of unsigned.
-        val response = try {
+        val forums = try {
             // A pasted STOKEN could belong to a different account. Do not trust web state
             // until the web identity independently matches the app-protocol identity.
-            val identity = net.get("https://tieba.baidu.com/mo/q/newmoindex?need_user=1", webHeaders(cookies))
-            if (identity.opt("no")?.toString()?.toIntOrNull() != 0) {
-                val message = identity.optString("error")
-                if (isManual(message))
-                    throw AdapterException(TaskStatus.MANUAL, "贴吧要求手动验证，请前往官方入口")
-                if (isExpired(message))
-                    throw AdapterException(TaskStatus.EXPIRED, "贴吧网页登录失效，请重新官方登录并更新凭证")
-                return null
+            val webUid = webIdentities.get(key) ?: run {
+                val identity = readRequest(retryReads) {
+                    net.get("https://tieba.baidu.com/mo/q/newmoindex?need_user=1", webHeaders(cookies))
+                }
+                if (identity.opt("no")?.toString()?.toIntOrNull() != 0) {
+                    val message = identity.optString("error")
+                    if (isManual(message))
+                        throw AdapterException(TaskStatus.MANUAL, "需要在贴吧 App 完成验证")
+                    if (isExpired(message))
+                        throw AdapterException(TaskStatus.EXPIRED, "登录已失效，请重新登录")
+                    return null
+                }
+                val uid = identity.optJSONObject("data")?.optString("id")
+                if (uid.isNullOrEmpty()) return null
+                webIdentities.put(key, uid)
             }
-            val webUid = identity.optJSONObject("data")?.optString("id")
-            if (webUid.isNullOrEmpty()) return null
             if (webUid != target.metadata["ownerUserId"])
                 throw AdapterException(TaskStatus.EXPIRED, "贴吧网页凭证与账号身份不一致，请重新导入同一账号的 Cookie")
-            net.postForm("https://tieba.baidu.com/c/f/forum/forumGuide",
-                mapOf("sort_type" to "3", "call_from" to "3"), webHeaders(cookies) + ("Subapp-Type" to "hybrid"))
+            (if (forceFresh) null else guides.get(key)) ?: run {
+                val response = readRequest(retryReads) {
+                    net.postForm("https://tieba.baidu.com/c/f/forum/forumGuide",
+                        mapOf("sort_type" to "3", "call_from" to "3"), webHeaders(cookies) + ("Subapp-Type" to "hybrid"))
+                }
+                if (errorCode(response) != 0) {
+                    val msg = response.optString("error_msg")
+                    if (isManual(msg)) throw AdapterException(TaskStatus.MANUAL, "需要在贴吧 App 完成验证", diagnostic(response))
+                    if (isExpired(msg)) throw AdapterException(TaskStatus.EXPIRED, "登录已失效，请重新登录", diagnostic(response))
+                    return null
+                }
+                val items = response.optJSONArray("like_forum") ?: return null
+                // Keep only public IDs and business flags, never a raw response or credentials.
+                val states = linkedMapOf<String, String>()
+                for (i in 0 until items.length()) {
+                    val item = items.optJSONObject(i) ?: continue
+                    val id = item.optString("forum_id")
+                    if (id !in states) states[id] = item.opt("is_sign")?.toString()
+                        ?.takeIf { it in setOf("0", "1", "false", "true") }.orEmpty()
+                }
+                guides.put(key, states)
+            }
         } catch (e: AdapterException) {
+            // A redirect on the optional web session does not establish the App session's validity.
+            if (e is HttpStatusException && (e.isRedirect || e.isTransient)) {
+                return if (retryReads) null else TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", e.diagnostic)
+            }
             if (e.status == TaskStatus.UNKNOWN) return null
             throw e
-        } catch (_: java.io.IOException) {
+        } catch (e: IOException) {
+            if (!retryReads || Thread.currentThread().isInterrupted) throw e
             return null
         }
-        if (errorCode(response) != 0) {
-            val msg = response.optString("error_msg")
-            if (isManual(msg)) throw AdapterException(TaskStatus.MANUAL, "贴吧要求手动验证，请前往官方入口", diagnostic(response))
-            if (isExpired(msg)) throw AdapterException(TaskStatus.EXPIRED, "贴吧网页登录失效，请重新官方登录并更新凭证", diagnostic(response))
-            return null
+        return when (forums[target.metadata["forumId"]]) {
+            "1", "true" -> TaskResult(TaskStatus.ALREADY, "今日已签到", "tieba forumGuide is_sign=1")
+            "0", "false" -> TaskResult(TaskStatus.PENDING, "今日尚未签到", "tieba forumGuide is_sign=0")
+            else -> null
         }
-        val forums = response.optJSONArray("like_forum") ?: return null
-        for (i in 0 until forums.length()) {
-            val item = forums.optJSONObject(i) ?: continue
-            if (item.optString("forum_id") != target.metadata["forumId"]) continue
-            return when (item.opt("is_sign")?.toString()) {
-                "1", "true" -> TaskResult(TaskStatus.ALREADY, "贴吧当前自检通过，今日已签到", "tieba forumGuide is_sign=1")
-                "0", "false" -> TaskResult(TaskStatus.PENDING, "贴吧当前状态确认今日尚未签到", "tieba forumGuide is_sign=0")
-                else -> null
-            }
-        }
-        return null
     }
 
-    private fun login(cookies: Map<String, String>): Session {
-        val response = appRequest("/c/s/login", mapOf("_client_version" to VERSION, "bdusstoken" to cookies.getValue("BDUSS")))
-        requireSuccess(response, "身份校验")
+    private fun login(cookies: Map<String, String>, forceFresh: Boolean = false): Session {
+        val key = cacheKey(cookies)
+        if (forceFresh) sessions.remove(key) else sessions.get(key)?.let { return it }
+        val response = readAppRequest("/c/s/login", mapOf("_client_version" to VERSION, "bdusstoken" to cookies.getValue("BDUSS")))
+        requireSuccess(response)
         val user = response.optJSONObject("user")
-            ?: throw AdapterException(TaskStatus.EXPIRED, "贴吧未返回已登录身份，请更新 BDUSS", diagnostic(response))
+            ?: throw AdapterException(TaskStatus.EXPIRED, "登录已失效，请重新登录", diagnostic(response))
         val uid = user.optString("id")
         if (uid.toLongOrNull()?.let { it > 0 } != true)
-            throw AdapterException(TaskStatus.EXPIRED, "贴吧登录失效，请更新 BDUSS", diagnostic(response))
+            throw AdapterException(TaskStatus.EXPIRED, "登录已失效，请重新登录", diagnostic(response))
         val tbs = response.optJSONObject("anti")?.optString("tbs").orEmpty()
         if (!Regex("[a-fA-F0-9]{26}").matches(tbs))
-            throw AdapterException(TaskStatus.UNKNOWN, "贴吧未返回可用的请求校验信息，已停止", diagnostic(response))
-        return Session(uid, user.optString("name").takeIf { it.isNotBlank() } ?: "贴吧用户 $uid", tbs)
+            throw AdapterException(TaskStatus.UNKNOWN, "贴吧校验未通过，请稍后重试", diagnostic(response))
+        return sessions.put(key, Session(uid, user.optString("name").takeIf { it.isNotBlank() } ?: "贴吧用户 $uid", tbs))
     }
 
     private fun checkOwner(session: Session, target: Target) {
@@ -161,20 +258,22 @@ class TiebaAdapter internal constructor(
             throw AdapterException(TaskStatus.UNKNOWN, "贴吧目标缺失或不一致，请重新校验账号并选择贴吧")
     }
 
-    private fun followedForums(cookies: Map<String, String>, uid: String): List<Target> {
+    private fun followedForums(cookies: Map<String, String>, uid: String, forceFresh: Boolean = false): List<Target> {
+        val key = cacheKey(cookies)
+        if (forceFresh) followed.remove(key) else followed.get(key)?.let { return it }
         val result = linkedMapOf<String, Target>()
         for (page in 1..100) {
-            val response = appRequest("/c/f/forum/like", mapOf("BDUSS" to cookies.getValue("BDUSS"),
+            val response = readAppRequest("/c/f/forum/like", mapOf("BDUSS" to cookies.getValue("BDUSS"),
                 "_client_version" to VERSION, "friend_uid" to uid, "page_no" to "$page", "page_size" to "200"))
-            requireSuccess(response, "关注贴吧列表")
+            requireSuccess(response)
             val rawGroups = response.opt("forum_list")
             if (rawGroups !is JSONObject && !(rawGroups is org.json.JSONArray && rawGroups.length() == 0))
-                throw AdapterException(TaskStatus.UNKNOWN, "贴吧列表结构变化，未保存不完整列表")
+                throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取关注列表")
             val groups = response.optJSONObject("forum_list")
             var found = 0
             for (key in listOf("non-gconforum", "gconforum")) {
                 if (groups != null && groups.has(key) && !groups.isNull(key) && groups.optJSONArray(key) == null)
-                    throw AdapterException(TaskStatus.UNKNOWN, "贴吧列表分组结构变化，未保存不完整列表")
+                    throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取关注列表")
                 val array = groups?.optJSONArray(key) ?: continue
                 for (i in 0 until array.length()) {
                     val forum = array.optJSONObject(i) ?: throw AdapterException(TaskStatus.UNKNOWN, "贴吧列表结构变化，请更新适配器")
@@ -191,9 +290,9 @@ class TiebaAdapter internal constructor(
                 }
             }
             when (response.opt("has_more")?.toString()) {
-                "0", "false" -> return result.values.toList()
-                "1", "true" -> if (found == 0) throw AdapterException(TaskStatus.UNKNOWN, "贴吧分页未前进，未保存不完整列表")
-                else -> throw AdapterException(TaskStatus.UNKNOWN, "贴吧分页标记缺失，未保存不完整列表")
+                "0", "false" -> return followed.put(key, result.values.toList())
+                "1", "true" -> if (found == 0) throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取完整的关注列表")
+                else -> throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取完整的关注列表")
             }
         }
         throw AdapterException(TaskStatus.UNKNOWN, "关注贴吧超过本次读取上限，未保存不完整列表")
@@ -201,6 +300,31 @@ class TiebaAdapter internal constructor(
 
     private fun appRequest(path: String, fields: Map<String, String>): JSONObject =
         net.postForm("https://tiebac.baidu.com$path", signedFields(fields))
+
+    private fun readAppRequest(path: String, fields: Map<String, String>): JSONObject =
+        try { readRequest { appRequest(path, fields) } }
+        catch (e: IOException) {
+            // The individual request has already used its retry budget.
+            if (Thread.currentThread().isInterrupted) throw e
+            throw AdapterException(TaskStatus.FAILED, "网络连接失败，请稍后重试", transportDiagnostic(e))
+        }
+
+    private fun <T> readRequest(retry: Boolean = true, request: () -> T): T {
+        if (retry) repeat(2) { attempt ->
+            try { return request() }
+            catch (e: Exception) {
+                if (!isTransient(e)) throw e
+                pause(READ_RETRY_DELAY_MS * (attempt + 1))
+            }
+        }
+        return request()
+    }
+
+    private fun isTransient(e: Exception): Boolean = !Thread.currentThread().isInterrupted &&
+        (e is IOException || (e is HttpStatusException && e.isTransient))
+
+    private fun transportDiagnostic(e: Exception): String =
+        if (e is HttpStatusException) e.diagnostic else "exception=${e.javaClass.simpleName}"
 
     private fun webHeaders(cookies: Map<String, String>) = mapOf(
         "Cookie" to cookies.entries.joinToString("; ") { "${it.key}=${it.value}" },
@@ -220,7 +344,7 @@ class TiebaAdapter internal constructor(
         return cookies
     }
 
-    private fun requireSuccess(response: JSONObject, action: String) {
+    private fun requireSuccess(response: JSONObject) {
         if (errorCode(response) == 0) return
         val msg = response.optString("error_msg")
         val status = when {
@@ -229,13 +353,15 @@ class TiebaAdapter internal constructor(
             else -> TaskStatus.UNKNOWN
         }
         throw AdapterException(status, when (status) {
-            TaskStatus.MANUAL -> "贴吧要求手动验证，请前往官方入口"
-            TaskStatus.EXPIRED -> "贴吧登录失效，请更新 BDUSS"
-            else -> "贴吧${action}返回未识别结果，请在官方入口确认"
+            TaskStatus.MANUAL -> "需要在贴吧 App 完成验证"
+            TaskStatus.EXPIRED -> "登录已失效，请重新登录"
+            else -> "结果未确认，请稍后重试"
         }, diagnostic(response))
     }
 
     companion object {
+        const val WRITE_INTERVAL_MS = 5000L
+        private const val READ_RETRY_DELAY_MS = 1500L
         private const val VERSION = "22.12.1.0"
         private fun errorCode(result: JSONObject): Int? = result.opt("error_code")?.toString()?.toIntOrNull()
         private fun diagnostic(result: JSONObject) = "tieba error_code=${errorCode(result) ?: "missing"}"
@@ -256,15 +382,15 @@ class TiebaAdapter internal constructor(
             val diagnostic = diagnostic(result)
             val msg = result.optString("error_msg")
             return when {
-                code == 160002 -> TaskResult(TaskStatus.ALREADY, "贴吧明确返回今日已经签到", diagnostic)
+                code == 160002 -> TaskResult(TaskStatus.ALREADY, "今日已签到", diagnostic)
                 code == 0 && (result.optJSONObject("user_info")?.opt("sign_bonus_point")?.toString()?.toIntOrNull() ?: 0) > 0 ->
-                    TaskResult(TaskStatus.SUCCESS, "贴吧签到成功", diagnostic)
-                isManual(msg) -> TaskResult(TaskStatus.MANUAL, "请在贴吧官方入口完成手动验证", diagnostic)
+                    TaskResult(TaskStatus.SUCCESS, "签到成功", diagnostic)
+                isManual(msg) -> TaskResult(TaskStatus.MANUAL, "需要在贴吧 App 完成验证", diagnostic)
                 msg.contains("未登录") || msg.contains("请先登录") || msg.contains("登录失效") || msg.contains("登录过期") ->
-                    TaskResult(TaskStatus.EXPIRED, "贴吧登录失效，请更新 BDUSS", diagnostic)
+                    TaskResult(TaskStatus.EXPIRED, "登录已失效，请重新登录", diagnostic)
                 msg.contains("封禁") || msg.contains("禁止签到") || msg.contains("吧已被关闭") ->
-                    TaskResult(TaskStatus.FAILED, "平台拒绝此吧签到（封禁、限制或关闭），请在贴吧查看详情", diagnostic)
-                else -> TaskResult(TaskStatus.UNKNOWN, "贴吧返回未识别结果，请在官方入口确认", diagnostic)
+                    TaskResult(TaskStatus.FAILED, "此吧暂时无法签到", diagnostic)
+                else -> TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", diagnostic)
             }
         }
     }

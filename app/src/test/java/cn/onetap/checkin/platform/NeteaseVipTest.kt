@@ -16,9 +16,10 @@ class NeteaseVipTest {
     private fun state(signed: Boolean) = """{"code":200,"data":{"signInfoList":[{"today":false,"sign":true},{"today":true,"sign":$signed}]}}"""
 
     private data class Call(val path: String, val data: JSONObject, val cookies: Map<String, String>, val eapi: Boolean)
-    private fun fake(responses: List<String>, calls: MutableList<Call>): NeteaseAdapter {
+    private fun fake(responses: List<String>, calls: MutableList<Call>,
+        pause: (Long) -> Unit = {}): NeteaseAdapter {
         val queue = ArrayDeque(responses.map(::JSONObject))
-        return NeteaseAdapter { path, data, cookies, eapi ->
+        return NeteaseAdapter(pause = pause) { path, data, cookies, eapi ->
             calls += Call(path, JSONObject(data.toString()), cookies.toMap(), eapi)
             check(queue.isNotEmpty()) { "Unexpected extra request" }
             queue.removeFirst()
@@ -69,9 +70,49 @@ class NeteaseVipTest {
     @Test fun allWriteCodes200StillNeedExplicitConfirmedTodaySign() {
         for (last in listOf(state(false), """{"code":200,"data":{}}""")) {
             val calls = mutableListOf<Call>()
-            val adapter = fake(listOf(identity, state(false), """{"code":200}""", """{"code":200}""", last), calls)
-            assertEquals(TaskStatus.UNKNOWN, adapter.execute("synthetic", target).status)
+            val waits = mutableListOf<Long>()
+            val adapter = fake(listOf(identity, state(false), """{"code":200}""", """{"code":200}""") +
+                List(4) { last }, calls, waits::add)
+            val result = adapter.execute("synthetic", target)
+            assertEquals(TaskStatus.UNKNOWN, result.status)
+            assertEquals("结果未确认，请稍后重试", result.message)
+            assertEquals(listOf(1000L, 1500L, 2500L), waits)
         }
+    }
+
+    @Test fun delayedVipStateConfirmationOnlyRepeatsTheRead() {
+        val calls = mutableListOf<Call>()
+        val waits = mutableListOf<Long>()
+        val adapter = fake(listOf(identity, state(false), """{"code":200}""", """{"code":200}""",
+            state(false), state(false), state(true)), calls, waits::add)
+        val result = adapter.execute("synthetic", target)
+        assertEquals(TaskStatus.SUCCESS, result.status)
+        assertEquals("签到成功", result.message)
+        assertEquals(listOf(1000L, 1500L), waits)
+        assertEquals(1, calls.count { it.path.endsWith("/task/sign") })
+        assertEquals(1, calls.count { it.path.endsWith("/history/detail") })
+        assertEquals(4, calls.count { it.path.endsWith("/music/sign/pc") })
+    }
+
+    @Test fun postWriteReadTimeoutIsRetriedWithoutEscapingAsAWriteTimeout() {
+        val calls = mutableListOf<String>()
+        val waits = mutableListOf<Long>()
+        val statePath = "/vipnewcenter/app/minidesk/music/sign/pc"
+        val adapter = NeteaseAdapter(pause = waits::add) { path, _, _, _ ->
+            calls += path
+            when (path) {
+                "/nuser/account/get" -> JSONObject(identity)
+                statePath -> when (calls.count { it == statePath }) {
+                    1 -> JSONObject(state(false))
+                    2 -> throw IOException("fixture")
+                    else -> JSONObject(state(true))
+                }
+                else -> JSONObject("""{"code":200}""")
+            }
+        }
+        assertEquals(TaskStatus.SUCCESS, adapter.execute("synthetic", target).status)
+        assertEquals(listOf(1000L), waits)
+        assertEquals(6, calls.size)
     }
 
     @Test fun alreadySignedDoesNotSendEitherWriteStep() {
@@ -105,7 +146,7 @@ class NeteaseVipTest {
         val adapter = fake(listOf(identity, identity), calls)
         val wrongOwner = target.copy(metadata = mapOf("ownerUserId" to "456"))
         assertEquals(TaskStatus.EXPIRED, adapter.execute("synthetic", wrongOwner).status)
-        assertEquals(TaskStatus.EXPIRED, adapter.query("synthetic", wrongOwner).status)
+        assertEquals(TaskStatus.EXPIRED, adapter.query("synthetic", wrongOwner)?.status)
         assertEquals(2, calls.size)
         assertEquals(TaskStatus.UNKNOWN, adapter.execute("synthetic", Target("netease:daily:android", "daily", "旧任务")).status)
         assertEquals(2, calls.size)
@@ -114,7 +155,7 @@ class NeteaseVipTest {
     @Test fun queryOnlyReadsStateAndNeverCallsDetailOrTaskSign() {
         val calls = mutableListOf<Call>()
         val adapter = fake(listOf(identity, state(false)), calls)
-        assertEquals(TaskStatus.PENDING, adapter.query("synthetic", target).status)
+        assertEquals(TaskStatus.PENDING, adapter.query("synthetic", target)?.status)
         assertEquals(listOf("/nuser/account/get", "/vipnewcenter/app/minidesk/music/sign/pc"), calls.map { it.path })
     }
 
@@ -146,12 +187,13 @@ class NeteaseVipTest {
         catch (_: IOException) { assertEquals(3, calls.size) }
     }
 
-    @Test fun validationDiscoversOnlyVipMusicSignWithoutRequiringPaidVip() {
+    @Test fun validationDiscoversVipMusicSignAndYunbeiWithoutRequiringPaidVip() {
         val calls = mutableListOf<Call>()
         val actual = fake(listOf(identity), calls).validate("synthetic")
         assertEquals("123", actual.userId)
-        assertEquals(listOf(NeteaseAdapter.TARGET_ID), actual.targets.map { it.id })
-        assertEquals(NeteaseAdapter.TARGET_TYPE, actual.targets.single().type)
-        assertEquals("123", actual.targets.single().metadata["ownerUserId"])
+        assertEquals(listOf(NeteaseAdapter.TARGET_ID,NeteaseAdapter.YUNBEI_ID), actual.targets.map { it.id })
+        assertEquals(NeteaseAdapter.TARGET_TYPE, actual.targets.first().type)
+        assertTrue(actual.targets.all { it.metadata["ownerUserId"]=="123" })
+        assertEquals(1,calls.size)
     }
 }

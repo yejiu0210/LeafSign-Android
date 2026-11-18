@@ -16,8 +16,10 @@ import java.io.File
 class DeviceSmokeTest {
     @get:Rule val compose=createAndroidComposeRule<MainActivity>()
     @Test fun emptyAppHasWorkingTabsAndDisabledRun() {
-        compose.onAllNodesWithText("一键签到").assertCountEquals(2)
+        compose.onNodeWithText("一叶签").assertExists()
+        compose.onNodeWithText("一键签到").assertExists()
         compose.onNodeWithText("今天 0 / 0 项已完成").assertExists()
+        compose.onNodeWithText("还没有账号").assertExists()
         compose.onNodeWithText("账号",useUnmergedTree=true).performClick()
         compose.onNodeWithText("添加账号").performClick()
         compose.onNodeWithText("官方网页登录并自动导入").assertExists()
@@ -25,7 +27,9 @@ class DeviceSmokeTest {
         compose.onNodeWithText("本地输入凭证").assertExists()
         compose.onNodeWithText("取消").performClick()
         compose.onNodeWithText("设置",useUnmergedTree=true).performClick()
-        compose.onNodeWithText("每日后台签到（可选）").performScrollTo().assertExists()
+        compose.onNodeWithText("每日自动签到").performScrollTo().assertExists()
+        compose.onNodeWithText("1 分钟后测试一次").performScrollTo().assertExists()
+        compose.onNodeWithText("Shizuku 增强").performScrollTo().assertExists()
     }
     @Test fun screenshotsAreNotBlockedByApp() {
         compose.runOnUiThread {assertEquals(0,compose.activity.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE)}

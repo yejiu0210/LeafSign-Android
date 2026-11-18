@@ -10,7 +10,7 @@ internal class TiebaLikeTask(
     private val store: StateStore?,
     private val request: (String, Map<String,String>) -> JSONObject,
     private val choose: (Int) -> Int = { Random.nextInt(it) },
-    private val pace: () -> Unit = { }
+    private val pace: (String) -> Unit = { }
 ) {
     companion object {
         const val TARGET_PREFIX = "tieba:like:"
@@ -32,15 +32,15 @@ internal class TiebaLikeTask(
         if (target.id != "$TARGET_PREFIX$forumId" || forumId.toLongOrNull()?.let {it>0}!=true || name.isBlank() || name.any {it.code<32} ||
             target.type != "daily-like" || target.metadata["ownerUserId"] != owner)
             throw AdapterException(TaskStatus.UNKNOWN, "每日点赞任务身份不一致，请刷新账号")
-        val state = store?.read() ?: throw AdapterException(TaskStatus.UNKNOWN, "每日点赞缺少安全续传存储，已停止")
+        val state = store?.read() ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取点赞进度")
         val account = state.accounts.singleOrNull { it.platform == Platform.TIEBA && it.userId == owner }
-            ?: throw AdapterException(TaskStatus.UNKNOWN, "每日点赞找不到唯一的本地账号，已停止")
+            ?: throw AdapterException(TaskStatus.UNKNOWN, "无法确认点赞账号")
         return Context(account.id, target, Rules.period(target))
     }
     private fun checkpoint(context: Context): Step? {
         val matches = store!!.read().checkpoints.filter { it.accountId==context.accountId && it.targetId==context.target.id && it.period==context.period }
         if (matches.isEmpty()) return null
-        if (matches.size != 1) throw AdapterException(TaskStatus.UNKNOWN, "每日点赞续传记录重复，已停止")
+        if (matches.size != 1) throw AdapterException(TaskStatus.UNKNOWN, "点赞进度存在重复记录")
         val value = matches.single().values
         val threadId = value["threadId"].orEmpty(); val forumId = value["forumId"].orEmpty(); val name=value["forumName"].orEmpty()
         val stage=value["stage"].orEmpty(); val likes=value["likeAttempts"]?.toIntOrNull(); val unlikes=value["unlikeAttempts"]?.toIntOrNull(); val cuid=value["cuid"].orEmpty()
@@ -54,13 +54,13 @@ internal class TiebaLikeTask(
             (stage!="selected" || (likes==0 && unlikes==0 && repair==false)) &&
             (stage!="unlike_sent" || ((unlikes==1 || (repair==true && unlikes==2)) && likes==0)) &&
             (stage !in setOf("like_sent","complete") || (likes!=null && likes>=1))
-        if (!valid) throw AdapterException(TaskStatus.UNKNOWN, "每日点赞续传记录无法核对，未重新选择或操作其他帖子")
+        if (!valid) throw AdapterException(TaskStatus.UNKNOWN, "暂时无法确认点赞进度")
         return Step(TiebaLikeCodec.Post(threadId,forumId,name),stage,likes!!,unlikes!!,cuid,protocol,repair!!,candidateRepair!!)
     }
     private fun save(context: Context, step: Step): Step {
         store!!.update { old ->
             if (old.accounts.none { it.id==context.accountId && it.platform==Platform.TIEBA && it.userId==context.target.metadata["ownerUserId"] })
-                throw AdapterException(TaskStatus.UNKNOWN, "本地账号已变更，未执行点赞")
+                throw AdapterException(TaskStatus.UNKNOWN, "账号已变更，请重新登录")
             val checkpoint=TaskCheckpoint(context.accountId,context.target.id,context.period,step.values())
             old.copy(checkpoints=old.checkpoints.filterNot { it.accountId==context.accountId && it.targetId==context.target.id && it.period==context.period }+checkpoint)
         }
@@ -86,16 +86,16 @@ internal class TiebaLikeTask(
             }
             throw rejected!!
         }
-        throw AdapterException(TaskStatus.UNKNOWN,"${name}吧本次没有可用帖子，未转到其他吧点赞；可稍后重试")
+        throw AdapterException(TaskStatus.UNKNOWN,"${name}吧暂无可用帖子，请稍后重试")
     }
     private fun read(owner: String, bduss: String, post: TiebaLikeCodec.Post): Boolean = TiebaLikeCodec.liked(
         request("/c/f/pb/page",TiebaLikeCodec.readFields(bduss)+mapOf("kz" to post.threadId,"pn" to "1","rn" to "2","r" to "0","lz" to "0")),owner,post)
     private fun result(status: TaskStatus, message: String) = TaskResult(status,message)
     private fun complete(context: Context, step: Step): TaskResult {
         save(context,step.copy(stage="complete"))
-        return result(TaskStatus.SUCCESS,"已确认${step.post.forumName}吧帖子 ${step.post.threadId} 点赞生效；此吧今日仅处理这一帖")
+        return result(TaskStatus.SUCCESS,"${step.post.forumName}吧点赞成功")
     }
-    private fun pending() = result(TaskStatus.PENDING,"当天所选帖子尚需执行剩余点赞步骤")
+    private fun pending() = result(TaskStatus.PENDING,"待点赞")
     private fun rejectUnwrittenCandidate(error: AdapterException) = TiebaLikeCodec.explicitIdentityMismatch(error) ||
         TiebaLikeCodec.unavailableCandidate(error) || TiebaLikeCodec.unidentifiedForumCandidate(error)
     private fun canReplaceCandidate(step: Step, error: AdapterException) = step.stage=="selected" && step.likes==0 && step.unlikes==0 &&
@@ -112,18 +112,18 @@ internal class TiebaLikeTask(
     fun query(owner: String, bduss: String, target: Target): TaskResult? {
         val context=context(owner,target)
         val step=checkpoint(context) ?: return null
-        if (step.stage=="complete") return result(TaskStatus.ALREADY,"本地记录确认此吧今日帖子 ${step.post.threadId} 点赞任务已完成，未重复取消或点赞")
+        if (step.stage=="complete") return result(TaskStatus.ALREADY,"今日已点赞")
         val liked=try { read(owner,bduss,step.post) } catch(e: AdapterException) {
             if(canReplaceCandidate(step,e)) return pending()
             throw e
         }
         return when(step.stage) {
             "selected" -> pending()
-            "unlike_sent" -> if (!liked || canRepair(context,step)) pending() else result(TaskStatus.UNKNOWN,"取消点赞是否生效仍待确认；未再次取消或更换帖子")
+            "unlike_sent" -> if (!liked || canRepair(context,step)) pending() else result(TaskStatus.UNKNOWN,"取消点赞结果未确认")
             "like_sent" -> when {
                 liked -> complete(context,step)
                 step.likes<2 || canRepair(context,step) -> pending()
-                else -> result(TaskStatus.UNKNOWN,"同帖两次有限点赞尝试均未确认，已停止；请在贴吧查看")
+                else -> result(TaskStatus.UNKNOWN,"点赞结果未确认")
             }
             else -> result(TaskStatus.UNKNOWN,"当天点赞状态待确认")
         }
@@ -131,11 +131,11 @@ internal class TiebaLikeTask(
     fun execute(owner: String, bduss: String, tbs: String, target: Target, forums: List<Target>): TaskResult {
         val context=context(owner,target)
         val previous=checkpoint(context)
-        if (previous?.stage=="complete") return result(TaskStatus.ALREADY,"本地记录确认此吧今日帖子 ${previous.post.threadId} 点赞任务已完成，未重复取消或点赞")
+        if (previous?.stage=="complete") return result(TaskStatus.ALREADY,"今日已点赞")
         val forum=forums.singleOrNull { it.type=="forum" && it.bound && it.id=="tieba:forum:${target.metadata["forumId"]}" &&
             it.metadata["forumId"]==target.metadata["forumId"] && it.metadata["ownerUserId"]==owner }
-            ?: return result(TaskStatus.UNKNOWN,"此吧已不在当前关注范围，未转到其他吧或继续点赞")
-        if (forum.metadata["forumName"].isNullOrBlank()) return result(TaskStatus.UNKNOWN,"此吧名称缺失，未选择或操作帖子")
+            ?: return result(TaskStatus.UNKNOWN,"你已取消关注此吧")
+        if (forum.metadata["forumName"].isNullOrBlank()) return result(TaskStatus.UNKNOWN,"无法确认吧名，请刷新账号")
         var step=previous ?: save(context,select(owner,bduss,forum))
         var liked=try { read(owner,bduss,step.post) } catch(e: AdapterException) {
             if(!canReplaceCandidate(step,e)) throw e
@@ -147,28 +147,28 @@ internal class TiebaLikeTask(
         }
         if (step.stage=="like_sent") {
             if (liked) return complete(context,step)
-            if (step.likes>=2 && !canRepair(context,step)) return result(TaskStatus.UNKNOWN,"同帖已达到有限点赞尝试上限，未继续写入；请在贴吧查看")
+            if (step.likes>=2 && !canRepair(context,step)) return result(TaskStatus.UNKNOWN,"点赞结果未确认")
         }
         if (step.stage=="unlike_sent" && liked) {
-            if(!canRepair(context,step)) return result(TaskStatus.UNKNOWN,"取消点赞结果仍待确认，未再次取消或更换帖子")
-            pace()
+            if(!canRepair(context,step)) return result(TaskStatus.UNKNOWN,"取消点赞结果未确认")
+            pace(owner)
             step=save(context,step.copy(unlikes=step.unlikes+1,protocol="obj_type",repairUsed=true))
             TiebaLikeCodec.requireSuccess(request("/c/c/agree/opAgree",TiebaLikeCodec.writeFields(bduss,tbs,step.post,step.cuid,true)),"取消点赞")
             liked=read(owner,bduss,step.post)
-            if(liked) return result(TaskStatus.UNKNOWN,"修正协议取消点赞后仍未确认，已用完一次修复机会；未继续写入")
+            if(liked) return result(TaskStatus.UNKNOWN,"取消点赞结果未确认")
         }
         if (step.stage=="selected" && liked) {
-            pace()
+            pace(owner)
             step=save(context,step.copy(stage="unlike_sent",unlikes=1,protocol="obj_type"))
             TiebaLikeCodec.requireSuccess(request("/c/c/agree/opAgree",TiebaLikeCodec.writeFields(bduss,tbs,step.post,step.cuid,true)),"取消点赞")
             liked=read(owner,bduss,step.post)
-            if (liked) return result(TaskStatus.UNKNOWN,"取消点赞尚未确认，未再次取消或继续点赞")
+            if (liked) return result(TaskStatus.UNKNOWN,"取消点赞结果未确认")
         }
         // This can follow a confirmed unliked state or one failed same-thread like attempt.
-        pace()
+        pace(owner)
         step=save(context,step.copy(stage="like_sent",likes=step.likes+1,protocol="obj_type",repairUsed=step.repairUsed || step.likes>=2))
         TiebaLikeCodec.requireSuccess(request("/c/c/agree/opAgree",TiebaLikeCodec.writeFields(bduss,tbs,step.post,step.cuid,false)),"点赞")
         return if (read(owner,bduss,step.post)) complete(context,step)
-            else result(TaskStatus.UNKNOWN,"点赞写入后尚未确认状态；保留当天同一帖子，稍后查询再决定是否重试")
+            else result(TaskStatus.UNKNOWN,"点赞结果未确认，请稍后重试")
     }
 }

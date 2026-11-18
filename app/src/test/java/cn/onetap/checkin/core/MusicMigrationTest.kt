@@ -8,7 +8,7 @@ class MusicMigrationTest {
     private val member=Target("netease:vip:music-sign","vip-music-sign","黑胶乐签",metadata=mapOf("ownerUserId" to "fixture-user"))
     private fun account(platform:Platform=Platform.NETEASE)=Account(platform=platform,userId="fixture-user",displayName="fixture",note="fixture-note",credential="fixture-only-token",targets=listOf(ordinary),enabled=setOf(ordinary.id))
 
-    @Test fun retiredTaskNeverEnablesMemberTaskOrTransfersHistory() {
+    @Test fun retiredHistoryIsNotTransferredAndRefreshEnablesTheNewDefaultTask() {
         val a=account()
         val record=Record(accountId=a.id,platform=a.platform,accountLabel="fixture",targetId=ordinary.id,task=ordinary.label,period=Rules.period(ordinary),status=TaskStatus.SUCCESS,message="fixture")
         val before=AppState(accounts=listOf(a),records=listOf(record))
@@ -20,7 +20,7 @@ class MusicMigrationTest {
         assertEquals(before.records,after.records)
         val refreshed=Rules.addOrUpdate(after,Identity(a.userId,a.displayName,listOf(member)),Platform.NETEASE,a.credential,a.note,a.id)
         val newAccount=refreshed.accounts.single()
-        assertTrue(newAccount.enabled.isEmpty())
+        assertEquals(setOf(member.id),newAccount.enabled)
         assertNull(Rules.latest(refreshed,newAccount,member))
     }
     @Test fun otherAccountsAndNewMemberSelectionsRemainUnchanged() {

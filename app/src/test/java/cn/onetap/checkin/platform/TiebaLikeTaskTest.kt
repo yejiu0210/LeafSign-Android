@@ -65,6 +65,21 @@ class TiebaLikeTaskTest {
         private fun user()=JSONObject().put("is_login",1).put("id",responseOwner)
     }
     private fun task(store:MemoryStore,api:Api)=TiebaLikeTask(store,api::call,{0})
+    @Test fun unlikeAndLikeUseTheSameFiveSecondAccountPace() {
+        var now=0L
+        val waits=mutableListOf<Long>()
+        val adapter=TiebaAdapter(null,object:TiebaTransport {
+            override fun get(url:String,headers:Map<String,String>):JSONObject=error("unused")
+            override fun postForm(url:String,fields:Map<String,String>,headers:Map<String,String>):JSONObject=error("unused")
+        },pause={waits+=it;now+=it},clock={now})
+        val store=MemoryStore(AppState(accounts=listOf(account)))
+        val api=Api().apply {liked=true}
+        adapter.paceWrites(uid) // A preceding forum sign shares the very same account throttle.
+        val task=TiebaLikeTask(store,api::call,{0},adapter::paceWrites)
+        assertEquals(TaskStatus.SUCCESS,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals(listOf(5000L,5000L),waits)
+        assertEquals(2,api.writes.size)
+    }
     private fun checkpoint(stage:String,likes:Int=0,unlikes:Int=0,accountId:String=account.id,period:String=Rules.period(target)) =
         TaskCheckpoint(accountId,target.id,period,mapOf("threadId" to "20","forumId" to "10","forumName" to "测试","stage" to stage,
             "likeAttempts" to "$likes","unlikeAttempts" to "$unlikes","cuid" to "06C7F37D41256F25FABA97B885DB6EFB|VAPUDW7TA"))
