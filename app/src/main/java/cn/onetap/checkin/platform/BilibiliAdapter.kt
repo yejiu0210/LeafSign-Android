@@ -8,25 +8,31 @@ import cn.onetap.checkin.core.PlatformAdapter
 import cn.onetap.checkin.core.Target
 import cn.onetap.checkin.core.TaskResult
 import cn.onetap.checkin.core.TaskStatus
+import cn.onetap.checkin.core.Rules
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONObject
+import java.io.IOException
 
-/** Only the member-center Exclusive Level Acceleration Pack, never VIP points sign-in. */
-class BilibiliAdapter : PlatformAdapter {
+/** Member-center level acceleration and explicitly enabled VIP big-point sign-in. */
+class BilibiliAdapter internal constructor(
+    private val exchange: ((String, String, JSONObject?, Map<String,String>) -> JSONObject)? = null
+) : PlatformAdapter {
     override val platform = Platform.BILIBILI
+    override val maxTargetConcurrency = 1
     private val net = NetClient(setOf("api.bilibili.com"))
 
     override fun validate(credential: String): Identity {
         val cookies = parseCookies(credential)
-        val response = net.get("$BASE/x/web-interface/nav", headers(cookies))
+        val response = get("$BASE/x/web-interface/nav", headers(cookies))
         checkCode(response, "nav")
         val data = response.optJSONObject("data")
-            ?: throw AdapterException(TaskStatus.UNKNOWN, "身份响应不完整，结果待确认", "nav; missing data")
+            ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法确认账号", "nav; missing data")
         val loggedIn = data.opt("isLogin") as? Boolean
-            ?: throw AdapterException(TaskStatus.UNKNOWN, "身份登录状态格式未知，无法确认身份", "nav; invalid isLogin")
+            ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法确认登录状态", "nav; invalid isLogin")
         if (!loggedIn)
-            throw AdapterException(TaskStatus.EXPIRED, "哔哩哔哩登录失效，请更新 Cookie", "nav; isLogin=false")
+            throw AdapterException(TaskStatus.EXPIRED, "登录已失效，请重新登录", "nav; isLogin=false")
         val uid = positiveUid(data.opt("mid"))
-            ?: throw AdapterException(TaskStatus.UNKNOWN, "未取得账号 UID，无法确认身份", "nav; missing mid")
+            ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法确认账号", "nav; missing mid")
         val vip = data.optJSONObject("vip")
         val vipStatus = strictInt(vip?.opt("status"))
         val level = strictInt(data.optJSONObject("level_info")?.opt("current_level"))
@@ -52,17 +58,23 @@ class BilibiliAdapter : PlatformAdapter {
                     "resetEvidence" to "官方确认日限一次；零点边界来自社区资料，执行前每次查询官方状态",
                     "eligibility" to eligibility
                 )
-            )),
-            "UID $uid · $eligibility；只领取等级加速包，不执行积分签到或自动观看"
+            ), Target(BIGPOINT_ID,BIGPOINT_TYPE,if(vipStatus==1) "大积分签到" else "大积分签到（需大会员）",bound=vipStatus==1,
+                metadata=mapOf("ownerUserId" to uid,"resetZone" to "Asia/Shanghai","resetHour" to "0","defaultEnabled" to "true"))),
+            "UID $uid · $eligibility；支持等级加速包与大积分签到，不执行自动观看"
         )
     }
 
     override fun query(credential: String, target: Target): TaskResult? {
+        if (isBigPoint(target)) {
+            bigPointIdentityProblem(credential,target)?.let { return it }
+            return queryBigPoint(parseCookies(credential))
+        }
         requireTarget(target)
         return queryState(parseCookies(credential), target)
     }
 
     override fun execute(credential: String, target: Target): TaskResult {
+        if (isBigPoint(target)) return executeBigPoint(credential,target)
         requireTarget(target)
         val cookies = parseCookies(credential)
         val before = queryState(cookies, target)
@@ -70,19 +82,20 @@ class BilibiliAdapter : PlatformAdapter {
         if (before.status != TaskStatus.PENDING) return before
         val fields = mutableMapOf("csrf" to cookies.getValue("bili_jct"))
         cookies["buvid3"]?.let { fields["buvid"] = it }
-        val response = net.postForm("$BASE/x/vip/experience/add", fields, headers(cookies))
+        val response = exchange?.invoke("POST","$BASE/x/vip/experience/add",JSONObject(fields),headers(cookies))
+            ?: net.postForm("$BASE/x/vip/experience/add", fields, headers(cookies))
         val code = strictInt(response.opt("code"))
         if (code == 69198) {
             val confirmed = queryState(cookies, target)
             return if (confirmed.status == TaskStatus.ALREADY) confirmed
-            else TaskResult(TaskStatus.UNKNOWN, "平台提示经验已领取，但当前状态尚未确认", "experience/add; code=69198", "到账状态待确认")
+            else TaskResult(TaskStatus.UNKNOWN, "经验领取结果未确认", "experience/add; code=69198", "到账状态待确认")
         }
         checkCode(response, "experience/add")
         return parseClaimResponse(response)
     }
 
     private fun queryState(cookies: Map<String, String>, target: Target): TaskResult {
-        val response = net.get(
+        val response = get(
             "$BASE/x/vip/web/vip_center/v2?is_selected=false&select_modules=VipExclusive%2CBigPoint%2CComicShow",
             headers(cookies)
         )
@@ -93,7 +106,7 @@ class BilibiliAdapter : PlatformAdapter {
             ?: return TaskResult(TaskStatus.UNKNOWN, "无法确认大会员资格", "vip_center/v2; missing vip_info")
         membershipProblem(vip, target.metadata["ownerUserId"])?.let { return it }
         val experience = data.optJSONObject("experience")
-            ?: return TaskResult(TaskStatus.NOT_CONNECTED, "官方未返回等级加速包模块，请在官方入口确认后提供页面说明", "vip_center/v2; no experience module", "未查询到发放状态")
+            ?: return TaskResult(TaskStatus.NOT_CONNECTED, "暂时无法查询等级加速包", "vip_center/v2; no experience module", "未查询到发放状态")
         val level = strictInt(experience.opt("level"))
             ?: return TaskResult(TaskStatus.UNKNOWN, "正式会员等级字段缺失或格式未知", "vip_center/v2; invalid experience.level", "到账状态待确认")
         if (level < 0) return TaskResult(TaskStatus.UNKNOWN, "正式会员等级字段未知", "vip_center/v2; invalid experience.level", "到账状态待确认")
@@ -102,15 +115,55 @@ class BilibiliAdapter : PlatformAdapter {
         return parseExperienceState(experience)
     }
 
+    private fun get(url: String, headers: Map<String,String>): JSONObject = exchange?.invoke("GET",url,null,headers) ?: net.get(url,headers)
+
+    private fun bigPointIdentityProblem(credential: String, target: Target): TaskResult? {
+        if (!target.bound) return TaskResult(TaskStatus.INELIGIBLE,"大积分签到需有效大会员")
+        val identity = validate(credential)
+        if (identity.userId != target.metadata["ownerUserId"])
+            return TaskResult(TaskStatus.EXPIRED,"当前凭证与目标账号不一致，请重新校验账号")
+        return if (identity.targets.none { it.id==BIGPOINT_ID && it.bound }) TaskResult(TaskStatus.INELIGIBLE,"大积分签到需有效大会员") else null
+    }
+
+    private fun queryBigPoint(cookies: Map<String,String>): TaskResult? {
+        val time = System.currentTimeMillis()
+        val url = "$BASE/x/vip/vip_center/sign_in/three_days_sign".toHttpUrl().newBuilder()
+            .addQueryParameter("csrf",cookies.getValue("bili_jct")).addQueryParameter("mobi_app","android")
+            .addQueryParameter("platform","android").addQueryParameter("build","8451100").addQueryParameter("disable_rcmd","0")
+            .addQueryParameter("t",time.toString()).addQueryParameter("ts",(time/1000).toString()).build().toString()
+        return parseBigPointState(get(url,headers(cookies)+mapOf("Referer" to "https://big.bilibili.com/mobile/bigPoint/task",
+            "Accept" to "application/json, text/plain, */*")))
+    }
+
+    private fun executeBigPoint(credential: String, target: Target): TaskResult {
+        bigPointIdentityProblem(credential,target)?.let { return it }
+        val cookies = parseCookies(credential)
+        val before = queryBigPoint(cookies)
+        if (before != null && before.status != TaskStatus.PENDING) return before
+        val time = System.currentTimeMillis()
+        val url = "$BASE/pgc/activity/score/task/sign2".toHttpUrl().newBuilder()
+            .addQueryParameter("mobi_app","android").addQueryParameter("csrf",cookies.getValue("bili_jct"))
+            .addQueryParameter("platform","android").build().toString()
+        val body = JSONObject().put("device","phone").put("t",time).put("ts",time/1000)
+        val headers = headers(cookies)+mapOf("Referer" to "https://big.bilibili.com/mobile/index","Content-Type" to "application/json")
+        val response = exchange?.invoke("POST",url,body,headers) ?: net.postRawJson(url,body.toString(),headers)
+        val result = parseBigPointSign(response)
+        if (result.status != TaskStatus.SUCCESS) return result
+        val after = try { queryBigPoint(cookies) }
+        catch (e: AdapterException) { return TaskResult(e.status,"暂时无法查询签到状态",Rules.safeDiagnostic(e.diagnostic)) }
+        catch (_: IOException) { return TaskResult(TaskStatus.UNKNOWN,"结果未确认，请稍后重试") }
+        return if (after?.status == TaskStatus.PENDING) TaskResult(TaskStatus.UNKNOWN,"结果未确认，请稍后重试") else result
+    }
+
     private fun checkCode(response: JSONObject, endpoint: String) {
         val code = strictInt(response.opt("code"))
         when (code) {
             0 -> return
-            -101, -401 -> throw AdapterException(TaskStatus.EXPIRED, "哔哩哔哩登录失效，请更新 Cookie", "$endpoint; code=$code")
+            -101, -401 -> throw AdapterException(TaskStatus.EXPIRED, "登录已失效，请重新登录", "$endpoint; code=$code")
             -111 -> throw AdapterException(TaskStatus.EXPIRED, "Cookie 中的校验凭证无效，请更新完整 Cookie", "$endpoint; code=$code")
-            -352, -412, 73319 -> throw AdapterException(TaskStatus.MANUAL, "平台需要手动验证，请在官方入口完成后再试", "$endpoint; code=$code")
-            6034007 -> throw AdapterException(TaskStatus.MANUAL, "平台限制请求频率，请稍后手动重试", "$endpoint; code=$code")
-            else -> throw AdapterException(TaskStatus.UNKNOWN, "平台返回未识别业务结果，结果待确认", "$endpoint; code=$code")
+            -352, -412, 73319 -> throw AdapterException(TaskStatus.MANUAL, "需要在哔哩哔哩 App 完成验证", "$endpoint; code=$code")
+            6034007 -> throw AdapterException(TaskStatus.MANUAL, "请求太频繁，请稍后重试", "$endpoint; code=$code")
+            else -> throw AdapterException(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", "$endpoint; code=$code")
         }
     }
 
@@ -127,9 +180,43 @@ class BilibiliAdapter : PlatformAdapter {
 
     companion object {
         const val TYPE = "bilibili_vip_level_acceleration"
+        const val BIGPOINT_ID = "bilibili:bigpoint"
+        const val BIGPOINT_TYPE = "bigpoint"
+        private fun isBigPoint(target: Target) = target.id==BIGPOINT_ID && target.type==BIGPOINT_TYPE
         const val ENTRY = "https://big.bilibili.com/mobile/index?location=drawExperienceModule"
         private const val BASE = "https://api.bilibili.com"
         private val integerLiteral = Regex("-?(0|[1-9][0-9]*)")
+
+        internal fun parseBigPointState(response: JSONObject): TaskResult? {
+            val code = strictInt(response.opt("code"))
+            if (code == -101) throw AdapterException(TaskStatus.EXPIRED,"登录已失效，请重新登录","code=-101")
+            if (code != 0) return null
+            val data = response.optJSONObject("data") ?: return null
+            val signed = data.optJSONObject("three_day_sign")?.opt("signed") as? Boolean ?: return null
+            val balance = numericValue(data.optJSONObject("big_point")?.opt("point"))
+            return if (signed) TaskResult(TaskStatus.ALREADY,"今日已签到"+(balance?.let { "，当前大积分 $it" } ?: ""),"code=0")
+                else TaskResult(TaskStatus.PENDING,"今日大积分尚未签到","code=0")
+        }
+
+        internal fun parseBigPointSign(response: JSONObject): TaskResult {
+            val code = strictInt(response.opt("code"))
+            val diagnostic = "code=${code ?: "missing"}"
+            if (code == -101) return TaskResult(TaskStatus.EXPIRED,"登录已失效，请重新登录",diagnostic)
+            val data = response.optJSONObject("data")
+            if (code == 0 && data != null && data.length()>0) {
+                val score = numericValue(data.opt("score")) ?: numericValue(data.opt("vipScore"))
+                val count = numericValue(data.opt("count")); val duration = numericValue(data.opt("duration"))
+                val message = "大积分签到成功"+(score?.let { "，获得 $it 积分" } ?: "") +
+                    (if(count!=null && duration!=null) "，连续签到 $count/$duration 天" else "")
+                return TaskResult(TaskStatus.SUCCESS,message,diagnostic)
+            }
+            val message = response.optString("message")
+            if (message.contains("已签到") || message.contains("已完成")) return TaskResult(TaskStatus.ALREADY,"今日大积分已签到",diagnostic)
+            if (message.contains("大会员")) return TaskResult(TaskStatus.INELIGIBLE,"大积分签到需有效大会员",diagnostic)
+            return TaskResult(TaskStatus.UNKNOWN,"结果未确认，请稍后重试",diagnostic)
+        }
+
+        private fun numericValue(value: Any?): String? = (value as? Number)?.takeIf { it.toDouble().isFinite() }?.toString()
 
         /** Reject numeric strings, decimal/exponent numbers, overflow and fractional coercion. */
         internal fun strictLong(value: Any?): Long? {
@@ -146,7 +233,7 @@ class BilibiliAdapter : PlatformAdapter {
         internal fun membershipProblem(vip: JSONObject, expectedUid: String?): TaskResult? {
             val mid = strictLong(vip.opt("mid"))
                 ?: return TaskResult(TaskStatus.UNKNOWN, "会员中心 UID 格式未知，无法确认身份", "vip_center/v2; invalid mid")
-            if (mid == 0L) return TaskResult(TaskStatus.EXPIRED, "哔哩哔哩登录失效，请更新 Cookie", "vip_center/v2; mid=0")
+            if (mid == 0L) return TaskResult(TaskStatus.EXPIRED, "登录已失效，请重新登录", "vip_center/v2; mid=0")
             if (mid < 0L) return TaskResult(TaskStatus.UNKNOWN, "会员中心 UID 无效，无法确认身份", "vip_center/v2; invalid mid")
             if (expectedUid.isNullOrBlank() || expectedUid != mid.toString())
                 return TaskResult(TaskStatus.MANUAL, "当前凭证的 UID 与任务账号不一致，请重新校验账号", "vip_center/v2; owner mismatch")
@@ -164,7 +251,7 @@ class BilibiliAdapter : PlatformAdapter {
             val data = response.optJSONObject("data")
             val type = strictInt(data?.opt("type"))
             if (code != 0 || data == null || data.opt("is_grant") !is Boolean || type == null)
-                return TaskResult(TaskStatus.UNKNOWN, "领取响应字段不完整，结果待确认", "experience/add; code=$code; unconfirmed grant fields", "到账状态待确认")
+                return TaskResult(TaskStatus.UNKNOWN, "领取结果未确认，请稍后重试", "experience/add; code=$code; unconfirmed grant fields", "到账状态待确认")
             if (!data.getBoolean("is_grant"))
                 return TaskResult(TaskStatus.FAILED, "平台未确认领取成功", "experience/add; code=0; is_grant=false", "未确认发放")
             return if (type == 0) {
@@ -180,11 +267,11 @@ class BilibiliAdapter : PlatformAdapter {
                 return TaskResult(TaskStatus.UNKNOWN, "等级加速包状态字段缺失", "vip_center/v2; missing experience.state", "到账状态待确认")
             return when (state) {
                 0 -> TaskResult(TaskStatus.PENDING, "已满足观看条件，可以领取等级加速包", "vip_center/v2; experience.state=0", "尚未领取")
-                1 -> TaskResult(TaskStatus.ALREADY, "平台显示今日等级加速包已领取", "vip_center/v2; experience.state=1", "平台显示已领取；未额外核对经验流水")
+                1 -> TaskResult(TaskStatus.ALREADY, "今日等级加速包已领取", "vip_center/v2; experience.state=1", "平台显示已领取；未额外核对经验流水")
                 2 -> TaskResult(TaskStatus.INELIGIBLE, "请先在哔哩哔哩手动观看视频 1 分钟，然后重试", "vip_center/v2; experience.state=2", "尚未满足观看条件，未领取")
-                3 -> TaskResult(TaskStatus.FAILED, "平台显示等级加速包领取失败", "vip_center/v2; experience.state=3", "未确认发放")
-                4 -> TaskResult(TaskStatus.UNKNOWN, "平台仍在处理等级加速包，结果待确认", "vip_center/v2; experience.state=4", "到账状态待确认")
-                else -> TaskResult(TaskStatus.UNKNOWN, "未识别的等级加速包状态，结果待确认", "vip_center/v2; experience.state=$state", "到账状态待确认")
+                3 -> TaskResult(TaskStatus.FAILED, "等级加速包领取失败", "vip_center/v2; experience.state=3", "未确认发放")
+                4 -> TaskResult(TaskStatus.UNKNOWN, "等级加速包正在处理", "vip_center/v2; experience.state=4", "到账状态待确认")
+                else -> TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", "vip_center/v2; experience.state=$state", "到账状态待确认")
             }
         }
 

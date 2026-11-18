@@ -53,7 +53,7 @@ internal object TiebaLikeCodec {
                 message.isEmpty() -> "missing"
                 else -> "other"
             }
-            throw AdapterException(error.status,if(unavailable) "所选帖子暂不可用（官方提示可能已被删除），未继续操作" else error.message,
+            throw AdapterException(error.status,if(unavailable) "所选帖子暂不可用" else error.message,
                 "tieba endpoint=pb_page reason=$reason thread_id=${post.threadId} error_code=${code ?: "missing"}")
         }
     }
@@ -70,26 +70,26 @@ internal object TiebaLikeCodec {
             else -> TaskStatus.UNKNOWN
         }
         throw AdapterException(status, when (status) {
-            TaskStatus.MANUAL -> "贴吧要求手动验证，已停止点赞，请在官方入口处理"
-            TaskStatus.EXPIRED -> "贴吧登录失效，已停止点赞，请更新凭证"
-            else -> "贴吧${action}结果无法确认，未继续操作"
+            TaskStatus.MANUAL -> "需要在贴吧 App 完成验证"
+            TaskStatus.EXPIRED -> "登录已失效，请重新登录"
+            else -> "${action}结果未确认，请稍后重试"
         }, "tieba error_code=${code ?: "missing"}")
     }
     private fun checkUser(body: JSONObject, owner: String) {
         val user = body.optJSONObject("user")
         val loggedIn = number(user?.opt("is_login")); val userId = positive(user?.opt("id"))
         if (loggedIn == 0L || (userId != null && userId != owner))
-            throw AdapterException(TaskStatus.EXPIRED, "帖子接口未确认当前账号身份，已停止点赞，请重新登录")
+            throw AdapterException(TaskStatus.EXPIRED, "登录已失效，请重新登录")
         if (loggedIn != 1L || userId == null)
-            throw AdapterException(TaskStatus.UNKNOWN, "帖子接口缺少明确的已登录身份，未继续点赞")
+            throw AdapterException(TaskStatus.UNKNOWN, "暂时无法确认登录状态")
     }
     fun posts(body: JSONObject, owner: String, forumId: String, forumName: String): List<Post> {
         requireSuccess(body, "读取候选帖子")
         checkUser(body, owner)
         if (positive(body.optJSONObject("forum")?.opt("id")) != forumId)
-            throw AdapterException(TaskStatus.UNKNOWN, "帖子列表的贴吧身份不一致，未选择帖子")
+            throw AdapterException(TaskStatus.UNKNOWN, "帖子列表与当前账号不匹配")
         val array = body.optJSONArray("thread_list")
-            ?: throw AdapterException(TaskStatus.UNKNOWN, "贴吧帖子列表结构变化，未选择帖子")
+            ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取帖子列表")
         return (0 until array.length()).mapNotNull { index ->
             val item = array.optJSONObject(index) ?: return@mapNotNull null
             if (listOf("is_ad", "is_tiebaplus_ad", "is_deleted", "is_frs_mask").any { item.has(it) && number(item.opt(it)) != 0L }) return@mapNotNull null
@@ -106,25 +106,25 @@ internal object TiebaLikeCodec {
         checkUser(body, owner)
         val thread = body.optJSONObject("thread")
         if (positive(thread?.opt("id")) != post.threadId)
-            identityFailure("thread_id",post.threadId,thread?.opt("id"),"帖子详情返回的主题帖 ID 与所选帖子不一致或缺失，未继续操作")
+            identityFailure("thread_id",post.threadId,thread?.opt("id"),"帖子详情与所选帖子不匹配")
         val forumId=body.optJSONObject("forum")?.opt("id")
         if (positive(forumId) != post.forumId)
-            identityFailure("forum_id",post.forumId,forumId,"帖子详情返回的贴吧 ID 与所选贴吧不一致或缺失，未继续操作")
+            identityFailure("forum_id",post.forumId,forumId,"帖子详情与所选贴吧不匹配")
         if(thread?.has("fid")==true) {
             val redundant=thread.opt("fid")
             // ThreadInfo's optional proto3 scalar fid defaults to zero. The detail's
             // mandatory top-level forum.id and thread.id above still prove the target.
             val unset=redundant=="0" || (redundant is Number && number(redundant)==0L)
             if(!unset && positive(redundant)!=post.forumId)
-                identityFailure("redundant_fid",post.forumId,redundant,"帖子详情的附加贴吧 ID 与主贴吧身份冲突或无法识别，未继续操作")
+                identityFailure("redundant_fid",post.forumId,redundant,"暂时无法确认帖子所属贴吧")
         }
         val agree = thread?.optJSONObject("agree")
         if (number(agree?.opt("agree_type")) == 5L)
-            throw AdapterException(TaskStatus.UNKNOWN, "帖子返回点踩状态，未自动更改该态度")
+            throw AdapterException(TaskStatus.UNKNOWN, "你已点踩此帖")
         return when (number(agree?.opt("has_agree"))) {
             0L -> false
             1L -> true
-            else -> throw AdapterException(TaskStatus.UNKNOWN, "帖子未返回明确的本人点赞状态，未继续操作")
+            else -> throw AdapterException(TaskStatus.UNKNOWN, "暂时无法确认点赞状态")
         }
     }
 

@@ -39,6 +39,9 @@ data class TaskResult(
 
 interface PlatformAdapter {
     val platform: Platform
+    val maxTargetConcurrency: Int get() = 1
+    /** Lower groups finish first; MANUAL pauses only the triggering group, EXPIRED pauses all groups. */
+    fun executionOrder(target: Target): Int = 0
     fun validate(credential: String): Identity
     fun execute(credential: String, target: Target): TaskResult
     /** Read only. Return null when no reliable status endpoint is known. */
@@ -47,4 +50,6 @@ interface PlatformAdapter {
     fun requiresFreshCompletionCheck(target: Target): Boolean = false
 }
 
-class AdapterException(val status: TaskStatus, override val message: String, val diagnostic: String = "") : Exception(message)
+data class RunProgress(val total: Int, val finished: Int, val running: List<String>, val last: String)
+
+open class AdapterException(val status: TaskStatus, override val message: String, val diagnostic: String = "") : Exception(message)

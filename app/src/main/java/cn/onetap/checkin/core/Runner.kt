@@ -6,7 +6,15 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.ConcurrentHashMap
 import java.io.IOException
 
 class Runner(private val store: StateStore, private val adapters: Map<Platform,PlatformAdapter>) {
@@ -14,63 +22,144 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
     fun recover() {
         if (mutex.tryLock()) try { store.update { old -> val s=Rules.retireOrdinaryMusicTask(old);s.copy(records=s.records.map { if(it.status==TaskStatus.RUNNING) it.copy(status=TaskStatus.INTERRUPTED,message="上次进程中断，请查询或重试确认") else it }) } } finally { mutex.unlock() }
     }
-    suspend fun run(onlyFailed: Boolean = false, progress: (String) -> Unit = {}): Int {
+    suspend fun run(onlyFailed: Boolean = false, progress: (RunProgress) -> Unit = {}): Int =
+        run(onlyFailed, discoverNewTargets = true, progress)
+
+    internal suspend fun run(onlyFailed: Boolean, discoverNewTargets: Boolean, progress: (RunProgress) -> Unit = {}): Int {
         if (!mutex.tryLock()) return 0
-        var completed = 0
         try {
             val snapshot = store.read()
-            for (account in snapshot.accounts) {
-                currentCoroutineContext().ensureActive()
-                val targets = account.targets.filter { it.bound && it.id in account.enabled }.filter { target ->
-                    val last = Rules.latest(store.read(),account,target)
-                    !onlyFailed || last?.status in setOf(TaskStatus.FAILED,TaskStatus.UNKNOWN,TaskStatus.INTERRUPTED)
-                }
-                if (targets.isEmpty()) continue
-                val adapter = adapters.getValue(account.platform)
-                // A refreshed credential can never silently execute against another identity.
-                var currentTargetIds: Set<String> = emptySet()
-                val validation = try {
-                    var validatedCredential = ""
-                    val actual = readWithRetry { validatedCredential=currentCredential(account);adapter.validate(validatedCredential) }
-                    currentTargetIds=actual.targets.filter { it.bound }.map { it.id }.toSet()
-                    if (actual.userId != account.userId) TaskResult(TaskStatus.EXPIRED,"当前凭证身份与保存账号不一致，请更新凭证") else {
-                        actual.updatedCredential?.let { fresh -> store.update { s -> s.copy(accounts=s.accounts.map {
-                            if(it.id==account.id && it.platform==account.platform && it.userId==actual.userId && it.credential==validatedCredential) it.copy(credential=fresh) else it
-                        }) } }
-                        null
-                    }
-                } catch (e: CancellationException) { throw e } catch (e: Exception) { failure(e,account.credential) }
-                var stopAccount: TaskResult? = validation
-                for (target in targets) {
-                    currentCoroutineContext().ensureActive()
-                    progress("${account.platform.title} · ${account.note.ifBlank { account.displayName }} · ${target.label}")
-                    val record = Record(accountId=account.id,platform=account.platform,accountLabel=account.note.ifBlank { account.displayName },targetId=target.id,task=listOf(target.game,target.label,target.server).filter { it.isNotBlank() }.joinToString(" · "),period=Rules.period(target),status=TaskStatus.RUNNING,message="正在执行")
-                    store.update { it.copy(records=(it.records+record).takeLast(3000)) }
-                    val result = stopAccount ?: if(target.id !in currentTargetIds) TaskResult(TaskStatus.UNBOUND,"此目标已不在当前账号的绑定或关注列表，未执行；请刷新账号") else try {
-                        val known = readWithRetry { adapter.query(currentCredential(account),target) }
-                        currentCoroutineContext().ensureActive()
-                        val prior=Rules.latest(snapshot,account,target)
-                        val freshCheckRequired=adapter.requiresFreshCompletionCheck(target)
-                        val priorCompletion=if(freshCheckRequired) snapshot.records.any {
-                            it.accountId==account.id && it.targetId==target.id && it.period==record.period && Rules.completed(it.status)
-                        } else Rules.completed(prior?.status?:TaskStatus.PENDING)
-                        if (known != null && known.status != TaskStatus.PENDING) known
-                        else if(known==null && priorCompletion) {
-                            if(freshCheckRequired) TaskResult(TaskStatus.UNKNOWN,"本次签到自检未能确认；保留历史记录，未重复发送签到，请稍后重试自检")
-                            else TaskResult(prior!!.status,"当前本地周期内已确认完成；平台无可靠只读查询，未重复发送",prior.diagnostic,prior.experienceState)
-                        } else executeWithReconciliation(adapter,account,target)
-                    } catch(e: CancellationException) { finish(record,TaskResult(TaskStatus.INTERRUPTED,"任务被中断，结果待确认")); throw e }
-                      catch(e: Exception) { failure(e,account.credential) }
-                    fun redact(value: String) = Rules.safeMessage(Rules.safeMessage(value,account.credential),currentCredential(account))
-                    val safe = result.copy(message=redact(result.message),diagnostic=Rules.safeDiagnostic(result.diagnostic),experienceState=redact(result.experienceState))
-                    finish(record,safe)
-                    progress("${account.platform.title} · ${target.label} · ${Rules.resultTitle(safe.status,target.id)}")
-                    if (Rules.completed(safe.status)) completed++
-                    if (safe.status in setOf(TaskStatus.EXPIRED,TaskStatus.MANUAL)) stopAccount=safe
-                }
+            val accounts = Semaphore(snapshot.settings.concurrency.coerceIn(1,8))
+            // Discover new default tasks even when an old account currently has no selected/retriable target.
+            val work = coroutineScope { snapshot.accounts.map { account -> async(Dispatchers.IO) {
+                accounts.withPermit { prepareAccount(snapshot, account, onlyFailed, discoverNewTargets) }
+            } }.awaitAll() }.filter { it.targets.isNotEmpty() }
+            val reporter = ProgressReporter(work.sumOf { it.targets.size }, progress)
+            reporter.publish()
+            coroutineScope {
+                work.forEach { plan -> launch(Dispatchers.IO) {
+                    accounts.withPermit { runAccount(snapshot, plan, reporter) }
+                } }
             }
-            return completed
+            return reporter.completed
         } finally { mutex.unlock() }
+    }
+
+    private data class AccountPlan(val account: Account, val targets: List<Target>, val currentTargetIds: Set<String>, val validation: TaskResult?)
+
+    private suspend fun prepareAccount(snapshot: AppState, account: Account, onlyFailed: Boolean, discoverNewTargets: Boolean): AccountPlan {
+        currentCoroutineContext().ensureActive()
+        val selected = account.targets.filter { it.bound && it.id in account.enabled }.filter { target ->
+            !onlyFailed || Rules.retryable(Rules.latest(snapshot,account,target)?.status)
+        }
+        if (!discoverNewTargets && selected.isEmpty()) return AccountPlan(account, emptyList(), emptySet(), null)
+        val adapter = adapters.getValue(account.platform)
+        var added: List<Target> = emptyList()
+        // A refreshed credential can never silently execute against another identity.
+        var currentTargetIds: Set<String> = emptySet()
+        val validation = try {
+            var validatedCredential = ""
+            val actual = readWithRetry { validatedCredential=currentCredential(account);adapter.validate(validatedCredential) }
+            currentTargetIds=actual.targets.filter { it.bound }.map { it.id }.toSet()
+            if (actual.userId != account.userId) TaskResult(TaskStatus.EXPIRED,"当前凭证身份与保存账号不一致，请更新凭证") else {
+                val previousIds = account.targets.map { it.id }.toSet()
+                val candidates = if (!discoverNewTargets) emptyList() else actual.targets.distinctBy { it.id }.filter {
+                    it.bound && it.metadata["defaultEnabled"] != "false" && it.id !in previousIds
+                }
+                var accepted = false
+                store.update { s -> s.copy(accounts=s.accounts.map { current ->
+                    if(current.id==account.id && current.platform==account.platform && current.userId==actual.userId && current.credential==validatedCredential) {
+                        accepted = true
+                        val existingIds = current.targets.map { it.id }.toSet()
+                        added = candidates.filter { it.id !in existingIds }
+                        current.copy(credential=actual.updatedCredential ?: current.credential,
+                            targets=current.targets+added, enabled=current.enabled+added.map { it.id })
+                    } else current
+                }) }
+                if (accepted) null else TaskResult(TaskStatus.EXPIRED,"校验期间账号或凭证已改变，请重新校验后执行")
+            }
+        } catch (e: CancellationException) { throw e } catch (e: Exception) { failure(e,account.credential) }
+        return AccountPlan(account, (selected + if (validation == null) added else emptyList()).distinctBy { it.id }, currentTargetIds, validation)
+    }
+
+    private suspend fun runAccount(snapshot: AppState, plan: AccountPlan, reporter: ProgressReporter) {
+        currentCoroutineContext().ensureActive()
+        val (account, targets, currentTargetIds, validation) = plan
+        val adapter = adapters.getValue(account.platform)
+        val stopAccount = AtomicReference(validation?.takeIf { it.status in setOf(TaskStatus.EXPIRED, TaskStatus.MANUAL) }
+            ?.let { StopCause("账号身份校验", it.status) })
+        val stoppedGroups = ConcurrentHashMap<Int, StopCause>()
+        suspend fun runTarget(target: Target, order: Int) {
+            currentCoroutineContext().ensureActive()
+            // Read after acquiring the permit: queued targets have not sent any request of their own.
+            // Targets that already passed this point are allowed to finish.
+            val stopped = stopAccount.get() ?: stoppedGroups[order]
+            val label = "${account.platform.title} · ${account.note.ifBlank { account.displayName }} · ${target.label}"
+            val record = Record(accountId=account.id,platform=account.platform,accountLabel=account.note.ifBlank { account.displayName },targetId=target.id,task=listOf(target.game,target.label,target.server).filter { it.isNotBlank() }.joinToString(" · "),period=Rules.period(target),status=TaskStatus.RUNNING,message="正在执行")
+            store.update { it.copy(records=(it.records+record).takeLast(3000)) }
+            if (stopped == null && validation == null && target.id in currentTargetIds) reporter.start(record.id, label)
+            val result = stopped?.interrupted() ?: validation ?: if(target.id !in currentTargetIds) TaskResult(TaskStatus.UNBOUND,"此目标已不在当前账号的绑定或关注列表，未执行；请刷新账号") else try {
+                val known = readWithRetry { adapter.query(currentCredential(account),target) }
+                currentCoroutineContext().ensureActive()
+                val prior=Rules.latest(snapshot,account,target)
+                val freshCheckRequired=adapter.requiresFreshCompletionCheck(target)
+                val priorCompletion=if(freshCheckRequired) snapshot.records.any {
+                    it.accountId==account.id && it.targetId==target.id && it.period==record.period && Rules.completed(it.status)
+                } else Rules.completed(prior?.status?:TaskStatus.PENDING)
+                if (known != null && known.status != TaskStatus.PENDING) known
+                else if(known==null && priorCompletion) {
+                    if(freshCheckRequired) TaskResult(TaskStatus.UNKNOWN,"本次签到自检未能确认；保留历史记录，未重复发送签到，请稍后重试自检")
+                    else TaskResult(prior!!.status,"当前本地周期内已确认完成；平台无可靠只读查询，未重复发送",prior.diagnostic,prior.experienceState)
+                } else executeWithReconciliation(adapter,account,target)
+            } catch(e: CancellationException) {
+                finish(record,TaskResult(TaskStatus.INTERRUPTED,"任务被中断，结果待确认"))
+                reporter.finish(record.id, "$label · ${TaskStatus.INTERRUPTED.title}", TaskStatus.INTERRUPTED)
+                throw e
+            }
+              catch(e: Exception) { failure(e,account.credential) }
+            if (result.status == TaskStatus.EXPIRED) stopAccount.compareAndSet(null, StopCause(target.label, result.status))
+            if (result.status == TaskStatus.MANUAL) stoppedGroups.putIfAbsent(order, StopCause(target.label, result.status))
+            // Account removal must not prevent finishing a record or redact with another identity.
+            val latestCredential = store.read().accounts.singleOrNull {
+                it.id==account.id && it.platform==account.platform && it.userId==account.userId
+            }?.credential.orEmpty()
+            fun redact(value: String) = Rules.safeMessage(Rules.safeMessage(value,account.credential),latestCredential)
+            val safe = result.copy(message=redact(result.message),diagnostic=Rules.safeDiagnostic(result.diagnostic),experienceState=redact(result.experienceState))
+            finish(record,safe)
+            reporter.finish(record.id, "$label · ${Rules.resultTitle(safe.status,target.id)}", safe.status)
+        }
+        val concurrency = adapter.maxTargetConcurrency.coerceAtLeast(1)
+        val permits = Semaphore(concurrency)
+        // Stable sorting preserves original order within a class. Finish each class before starting the next.
+        val groups = targets.sortedBy(adapter::executionOrder).groupBy(adapter::executionOrder)
+        for ((order, group) in groups) {
+            if (concurrency == 1) for (target in group) runTarget(target, order)
+            else coroutineScope { group.forEach { target -> launch { permits.withPermit { runTarget(target, order) } } } }
+        }
+    }
+
+    private data class StopCause(val label: String, val status: TaskStatus) {
+        fun interrupted(): TaskResult {
+            val reason = if (status == TaskStatus.EXPIRED) "登录失效，请先更新凭证" else "平台验证"
+            return TaskResult(TaskStatus.INTERRUPTED,
+                "未执行：同账号的「$label」触发了$reason，为避免加重风控已暂停；处理后点「仅重试失败 / 待确认项」补签")
+        }
+    }
+
+    /** Serialize both snapshots and callbacks, including when run() is called on a multithreaded dispatcher. */
+    private class ProgressReporter(private val total: Int, private val callback: (RunProgress) -> Unit) {
+        private val running = linkedMapOf<String, String>()
+        private var finished = 0
+        private var last = ""
+        var completed = 0
+            private set
+        @Synchronized fun publish() { callback(RunProgress(total, finished, running.values.toList(), last)) }
+        @Synchronized fun start(id: String, label: String) { running[id] = label; publish() }
+        @Synchronized fun finish(id: String, message: String, status: TaskStatus) {
+            running.remove(id); finished++; last = message
+            if (Rules.completed(status)) completed++
+            publish()
+        }
     }
     private suspend fun executeWithReconciliation(adapter: PlatformAdapter,account: Account,target: Target): TaskResult {
         currentCoroutineContext().ensureActive()

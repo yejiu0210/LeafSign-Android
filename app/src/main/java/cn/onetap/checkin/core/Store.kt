@@ -30,7 +30,9 @@ data class Record(
     val task: String, val period: String, val time: Long = System.currentTimeMillis(),
     val status: TaskStatus, val message: String, val diagnostic: String = "", val experienceState: String = ""
 )
-data class Settings(val auto: Boolean = false, val hour: Int = 9, val minute: Int = 0, val notifications: Boolean = false, val offerCatchup: Boolean = true, val themeMode: ThemeMode = ThemeMode.SYSTEM)
+data class Settings(val auto: Boolean = false, val hour: Int = 9, val minute: Int = 0, val notifications: Boolean = false, val offerCatchup: Boolean = true, val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val concurrency: Int = 4, val useAlarmClock: Boolean = true, val shizukuDaemon: Boolean = false, val lastAutoRunDate: String = "",
+    val autoRetry: Boolean = true)
 /** Encrypted continuation state for multi-step actions; never contains platform credentials. */
 data class TaskCheckpoint(val accountId: String, val targetId: String, val period: String, val values: Map<String,String>)
 data class AppState(val accounts: List<Account> = emptyList(), val records: List<Record> = emptyList(), val settings: Settings = Settings(), val checkpoints: List<TaskCheckpoint> = emptyList())
@@ -40,11 +42,16 @@ internal object SettingsJson {
         put("auto", settings.auto); put("hour", settings.hour); put("minute", settings.minute)
         put("notifications", settings.notifications); put("offerCatchup", settings.offerCatchup)
         put("themeMode", settings.themeMode.name)
+        put("concurrency", settings.concurrency); put("useAlarmClock", settings.useAlarmClock)
+        put("shizukuDaemon", settings.shizukuDaemon); put("lastAutoRunDate", settings.lastAutoRunDate)
+        put("autoRetry", settings.autoRetry)
     }
     fun decode(value: JSONObject) = Settings(
         value.optBoolean("auto"), value.optInt("hour", 9), value.optInt("minute", 0),
         value.optBoolean("notifications"), value.optBoolean("offerCatchup", true),
-        ThemeMode.fromStored(value.optString("themeMode"))
+        ThemeMode.fromStored(value.optString("themeMode")), value.optInt("concurrency", 4).coerceIn(1, 8),
+        value.optBoolean("useAlarmClock", true), value.optBoolean("shizukuDaemon", false), value.optString("lastAutoRunDate", ""),
+        value.optBoolean("autoRetry", true)
     )
 }
 
@@ -74,6 +81,10 @@ object Rules {
         return at.atZone(zone).minusHours(hour).toLocalDate().toString()
     }
     fun completed(status: TaskStatus) = status == TaskStatus.SUCCESS || status == TaskStatus.ALREADY
+    fun retryable(status: TaskStatus?) = when (status) {
+        TaskStatus.FAILED, TaskStatus.UNKNOWN, TaskStatus.INTERRUPTED -> true
+        else -> false
+    }
     fun latest(state: AppState, account: Account, target: Target): Record? = state.records.lastOrNull {
         it.accountId == account.id && it.targetId == target.id && it.period == period(target)
     }
@@ -83,13 +94,18 @@ object Rules {
         if (previous != null) require(previous.platform == platform && previous.userId == identity.userId) { "新凭证属于另一个账号，请单独添加，未覆盖原账号" }
         require(state.accounts.none { it.id != previousId && it.platform == platform && it.userId == identity.userId }) { "此账号已存在，请更新已有账号，避免把同一账号当成两个账号" }
         val targets = identity.targets.distinctBy { it.id }
+        val previousTargetIds = previous?.targets?.map { it.id }?.toSet().orEmpty()
         val selection = if (previous == null) targets.filter { it.bound && it.metadata["defaultEnabled"]!="false" }.map { it.id }.toSet()
-            else previous.enabled.intersect(targets.filter { it.bound }.map { it.id }.toSet())
+            else previous.enabled.intersect(targets.filter { it.bound }.map { it.id }.toSet()) +
+                targets.filter { it.bound && it.metadata["defaultEnabled"] != "false" && it.id !in previousTargetIds }
+                    .map { it.id }
         val account = Account(previous?.id ?: UUID.randomUUID().toString(), platform, identity.userId, identity.displayName,
             note.trim().take(40), identity.updatedCredential ?: credential, targets, selection, identity.details)
         return state.copy(accounts = state.accounts.filterNot { it.id == account.id } + account)
     }
     fun safeDiagnostic(value: String): String {
+        Regex("HTTP 3[0-9]{2}; (?:tieba endpoint=/(?:c/s/login|c/f/forum/(?:like|forumGuide)|c/c/forum/sign|mo/q/newmoindex); )?location_host=(?:[a-z0-9.-]{1,253}|[a-f0-9]*:[a-f0-9:]{1,44})")
+            .matchEntire(value)?.let { return it.value }
         Regex("tieba forumGuide is_sign=[01]").matchEntire(value)?.let { return it.value }
         val tiebaDetail = Regex("tieba endpoint=pb_page reason=(?:thread_unavailable|verification|login|other|missing) thread_id=[1-9][0-9]{0,18} error_code=(?:-?[0-9]{1,10}|missing)")
             .matchEntire(value)?.value
@@ -123,6 +139,10 @@ interface StateStore {
 class Store(context: Context) : StateStore {
     private val file = AtomicFile(File(context.noBackupFilesDir, "state.enc"))
     private val alias = "onetap-state-v1"
+    private data class FileSignature(val modified: Long, val length: Long, val backup: Boolean)
+    private var cached: AppState? = null
+    private var cachedSignature: FileSignature? = null
+    private fun signature() = file.baseFile.let { FileSignature(it.lastModified(), it.length(), File(it.path+".bak").exists()) }
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         return (ks.getKey(alias, null) as? SecretKey) ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
@@ -131,6 +151,8 @@ class Store(context: Context) : StateStore {
         }.generateKey()
     }
     @Synchronized override fun read(): AppState {
+        val before = signature()
+        cached?.let { if (cachedSignature == before) return it }
         val bytes = try { file.readFully() } catch (e: FileNotFoundException) {
             val base = file.baseFile
             if (!base.exists() && !File(base.path+".bak").exists() && !File(base.path+".new").exists()) return AppState()
@@ -143,13 +165,21 @@ class Store(context: Context) : StateStore {
         val decoded = StateJson.decode(JSONObject(String(cipher.doFinal(bytes.copyOfRange(13,bytes.size)), Charsets.UTF_8)))
         // Persist retirement immediately, using the original retained JSON to preserve all other data.
         decoded.migratedRoot?.let(::writeRoot)
+        // AtomicFile may have restored .bak, or migration may have rewritten the file.
+        cached = decoded.state
+        cachedSignature = signature()
         return decoded.state
     }
     @Synchronized override fun update(change: (AppState) -> AppState): AppState {
         val state = change(read())
         writeRoot(StateJson.encode(state))
+        cached = state
+        cachedSignature = signature()
         return state
     }
+    // Serialize a retry alarm change with settings updates that can cancel it.
+    @Synchronized internal fun <T> withSettings(action: (Settings) -> T): T = action(read().settings)
+
     private fun writeRoot(root: JSONObject) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()); updateAAD("OneTapCheckIn.v1".toByteArray()) }
         val bytes = byteArrayOf(1) + cipher.iv + cipher.doFinal(root.toString().toByteArray(Charsets.UTF_8))
