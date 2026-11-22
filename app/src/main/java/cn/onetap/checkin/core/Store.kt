@@ -163,12 +163,10 @@ class Store(context: Context) : StateStore {
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(1,13)))
         cipher.updateAAD("OneTapCheckIn.v1".toByteArray())
         val decoded = StateJson.decode(JSONObject(String(cipher.doFinal(bytes.copyOfRange(13,bytes.size)), Charsets.UTF_8)))
-        // Persist retirement immediately, using the original retained JSON to preserve all other data.
-        decoded.migratedRoot?.let(::writeRoot)
-        // AtomicFile may have restored .bak, or migration may have rewritten the file.
-        cached = decoded.state
+        // AtomicFile may have restored .bak.
+        cached = decoded
         cachedSignature = signature()
-        return decoded.state
+        return decoded
     }
     @Synchronized override fun update(change: (AppState) -> AppState): AppState {
         val state = change(read())
@@ -188,10 +186,7 @@ class Store(context: Context) : StateStore {
     }
 }
 
-/** JSON migration runs before enum decoding so removed platforms remain safe to upgrade from. */
 internal object StateJson {
-    data class Decoded(val state: AppState, val migratedRoot: JSONObject?)
-
     fun encode(state: AppState) = JSONObject().apply {
         put("accounts", JSONArray().apply { state.accounts.forEach { a -> put(JSONObject().apply {
             put("id",a.id);put("platform",a.platform.name);put("userId",a.userId);put("name",a.displayName);put("note",a.note);put("credential",a.credential);put("details",a.details);put("checkedAt",a.checkedAt)
@@ -205,9 +200,7 @@ internal object StateJson {
         put("settings",SettingsJson.encode(state.settings))
         put("checkpoints",CheckpointsJson.encode(state.checkpoints))
     }
-    fun decode(saved: JSONObject): Decoded {
-        val migrated = retireHeybox(saved)
-        val root = migrated ?: saved
+    fun decode(root: JSONObject): AppState {
         fun objects(array: JSONArray) = (0 until array.length()).map { array.getJSONObject(it) }
         val accounts = objects(root.optJSONArray("accounts") ?: JSONArray()).map { a ->
             val targets = objects(a.getJSONArray("targets")).map { t ->
@@ -220,28 +213,6 @@ internal object StateJson {
         val records = objects(root.optJSONArray("records") ?: JSONArray()).map { r -> Record(r.getString("id"),r.getString("accountId"),Platform.valueOf(r.getString("platform")),r.getString("accountLabel"),r.getString("targetId"),r.getString("task"),r.getString("period"),r.getLong("time"),TaskStatus.valueOf(r.getString("status")),r.getString("message"),r.optString("diagnostic"),r.optString("experienceState")) }
         val s = root.optJSONObject("settings") ?: JSONObject()
         val checkpoints=CheckpointsJson.decode(root.optJSONArray("checkpoints"))
-        return Decoded(AppState(accounts, records, SettingsJson.decode(s),checkpoints), migrated)
-    }
-
-    private fun retireHeybox(saved: JSONObject): JSONObject? {
-        fun objects(key: String) = saved.optJSONArray(key)?.let { items ->
-            (0 until items.length()).map { items.getJSONObject(it) }
-        }.orEmpty()
-        val accounts = objects("accounts")
-        val retiredAccounts = accounts.filter { it.optString("platform") == "HEYBOX" }
-        val retiredIds = retiredAccounts.mapNotNull { (it.opt("id") as? String)?.takeIf(String::isNotEmpty) }.toSet()
-        fun retiredRow(row: JSONObject) = row.optString("platform") == "HEYBOX" ||
-            row.optString("accountId") in retiredIds || row.optString("targetId").startsWith("heybox:")
-        val records = objects("records")
-        val checkpoints = objects("checkpoints")
-        val keptRecords = records.filterNot(::retiredRow)
-        val keptCheckpoints = checkpoints.filterNot(::retiredRow)
-        if (retiredAccounts.isEmpty() && keptRecords.size == records.size && keptCheckpoints.size == checkpoints.size) return null
-        // Copy rather than mutating the caller. Unknown fields and every retained row survive unchanged.
-        return JSONObject(saved.toString()).apply {
-            if (has("accounts")) put("accounts", JSONArray(accounts.filterNot { it.optString("platform") == "HEYBOX" }))
-            if (has("records")) put("records", JSONArray(keptRecords))
-            if (has("checkpoints")) put("checkpoints", JSONArray(keptCheckpoints))
-        }
+        return AppState(accounts, records, SettingsJson.decode(s), checkpoints)
     }
 }

@@ -2,14 +2,25 @@ package cn.onetap.checkin.login
 
 import cn.onetap.checkin.core.Platform
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OfficialLoginPolicyTest {
     @Test fun officialStartPagesAndMobileSklandAreAllowed() {
-        Platform.entries.forEach { assertTrue(OfficialLoginPolicy.allowed(it, OfficialLoginPolicy.startUrl(it))) }
+        for (platform in Platform.entries.filterNot { it == Platform.HEYBOX }) {
+            val url = OfficialLoginPolicy.startUrl(platform)
+            assertNotNull(url)
+            assertTrue(OfficialLoginPolicy.allowed(platform, url!!))
+        }
         assertTrue(OfficialLoginPolicy.allowed(Platform.SKLAND, "https://m.skland.com/"))
         assertTrue(OfficialLoginPolicy.allowed(Platform.NETEASE, "https://y.music.163.com/login"))
+    }
+    @Test fun heyboxHasNoWebLoginEntryOrAllowedHost() {
+        assertNull(OfficialLoginPolicy.startUrl(Platform.HEYBOX))
+        assertFalse(OfficialLoginPolicy.allowed(Platform.HEYBOX, "https://login.xiaoheihe.cn/"))
+        assertFalse(OfficialLoginPolicy.allowed(Platform.HEYBOX, "https://xiaoheihe.cn/app/bbs/home"))
     }
     @Test fun mainFrameRejectsOtherPlatformAndLookalikeDomains() {
         listOf("https://music.163.com.evil.test/", "https://evil.test/?next=https://music.163.com/", "https://music.163.com@evil.test/", "https://music.163.com./").forEach {

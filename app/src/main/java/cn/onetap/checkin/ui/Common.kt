@@ -107,6 +107,7 @@ internal fun platformStyle(p: Platform) = when (p) {
     Platform.TIEBA -> PlatformStyle("贴", Color(0xFF3D7BF7), Color(0xFF7FA8FF))
     Platform.SKLAND -> PlatformStyle("森", Color(0xFF2F3A4A), Color(0xFFB8C4D6))
     Platform.BILIBILI -> PlatformStyle("B", Color(0xFFF25D8E), Color(0xFFFF8DB3))
+    Platform.HEYBOX -> PlatformStyle("盒", Color(0xFF26282E), Color(0xFFC9CDD6))
 }
 
 @Composable

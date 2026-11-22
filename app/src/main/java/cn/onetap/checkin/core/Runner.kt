@@ -86,8 +86,13 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
         currentCoroutineContext().ensureActive()
         val (account, targets, currentTargetIds, validation) = plan
         val adapter = adapters.getValue(account.platform)
-        val stopAccount = AtomicReference(validation?.takeIf { it.status in setOf(TaskStatus.EXPIRED, TaskStatus.MANUAL) }
-            ?.let { StopCause("账号身份校验", it.status) })
+        // Heybox has one daily task. Record the restore_login failure on it so re-login guidance is visible.
+        val validationResult = validation?.let {
+            if (account.platform != Platform.HEYBOX && it.status in setOf(TaskStatus.EXPIRED, TaskStatus.MANUAL))
+                StopCause("账号身份校验", it.status).interrupted()
+            else it
+        }
+        val stopAccount = AtomicReference<StopCause?>()
         val stoppedGroups = ConcurrentHashMap<Int, StopCause>()
         suspend fun runTarget(target: Target, order: Int) {
             currentCoroutineContext().ensureActive()
@@ -98,7 +103,7 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
             val record = Record(accountId=account.id,platform=account.platform,accountLabel=account.note.ifBlank { account.displayName },targetId=target.id,task=listOf(target.game,target.label,target.server).filter { it.isNotBlank() }.joinToString(" · "),period=Rules.period(target),status=TaskStatus.RUNNING,message="正在执行")
             store.update { it.copy(records=(it.records+record).takeLast(3000)) }
             if (stopped == null && validation == null && target.id in currentTargetIds) reporter.start(record.id, label)
-            val result = stopped?.interrupted() ?: validation ?: if(target.id !in currentTargetIds) TaskResult(TaskStatus.UNBOUND,"此目标已不在当前账号的绑定或关注列表，未执行；请刷新账号") else try {
+            val result = validationResult ?: stopped?.interrupted() ?: if(target.id !in currentTargetIds) TaskResult(TaskStatus.UNBOUND,"此目标已不在当前账号的绑定或关注列表，未执行；请刷新账号") else try {
                 val known = readWithRetry { adapter.query(currentCredential(account),target) }
                 currentCoroutineContext().ensureActive()
                 val prior=Rules.latest(snapshot,account,target)

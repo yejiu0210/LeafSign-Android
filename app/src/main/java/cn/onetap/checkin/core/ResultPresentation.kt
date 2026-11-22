@@ -18,7 +18,7 @@ object ResultPresentation {
                 .let { if (it > 0) "关注 $it 个吧" else "尚未关注贴吧" }
             Platform.BILIBILI -> account.targets.firstNotNullOfOrNull { it.metadata["eligibility"] }.orEmpty()
             Platform.SKLAND -> account.targets.count { it.bound }.let { if (it > 0) "$it 个角色" else "" }
-            Platform.NETEASE -> ""
+            Platform.NETEASE, Platform.HEYBOX -> ""
         }
     }
 }

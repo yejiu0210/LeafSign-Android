@@ -37,10 +37,12 @@ internal class ScriptTransport(vararg responses: QrResponse) : QrTransport {
 
 class QrProtocolTest {
     private fun providers(transport: QrTransport) = listOf(BilibiliQrProvider(transport) { TEST_NOW },
-        NeteaseQrProvider(transport, { TEST_NOW }), SklandQrProvider(transport) { TEST_NOW }, TiebaQrProvider(transport, { TEST_NOW }))
+        NeteaseQrProvider(transport, { TEST_NOW }), SklandQrProvider(transport) { TEST_NOW }, TiebaQrProvider(transport, { TEST_NOW }),
+        HeyboxQrProvider(transport) { TEST_NOW })
     private fun ticket(platform: Platform) = QrTicket(platform, "secret-content", expiresAt = TEST_NOW + QR_LIFETIME_MS,
         state = mapOf("qrcode_key" to "secret-key", "unikey" to "secret-key", "type" to "3", "channel" to "eapi",
-            "deviceId" to "0123456789abcdef0123456789abcdef", "scanId" to "secret-key", "sign" to "secret-key"))
+            "deviceId" to "0123456789abcdef0123456789abcdef", "scanId" to "secret-key", "sign" to "secret-key",
+            "qr" to "secret-key"))
 
     @Test fun allProvidersSanitizeNetworkErrorsInStartAndPoll() {
         val transport = ScriptTransport().apply { failure = IOException("Cookie=secret-network-token") }

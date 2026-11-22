@@ -42,5 +42,6 @@ object QrLogin {
         Platform.NETEASE -> NeteaseQrProvider()
         Platform.SKLAND -> SklandQrProvider()
         Platform.TIEBA -> TiebaQrProvider()
+        Platform.HEYBOX -> HeyboxQrProvider()
     }
 }

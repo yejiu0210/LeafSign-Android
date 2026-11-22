@@ -15,7 +15,9 @@ class CheckInApp : Application() {
     lateinit var store: Store
     lateinit var runner: Runner
     lateinit var scheduler: Scheduler
-    val adapters: Map<Platform,PlatformAdapter> by lazy { listOf(NeteaseAdapter(),TiebaAdapter(store),SklandAdapter(),BilibiliAdapter()).associateBy { it.platform } }
+    val adapters: Map<Platform,PlatformAdapter> by lazy {
+        listOf(NeteaseAdapter(), TiebaAdapter(store), SklandAdapter(), BilibiliAdapter(), HeyboxAdapter()).associateBy { it.platform }
+    }
     val state = MutableStateFlow(AppState())
     val busy = MutableStateFlow(false)
     val progress = MutableStateFlow("")

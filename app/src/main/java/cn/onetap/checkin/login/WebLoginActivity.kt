@@ -90,6 +90,12 @@ class WebLoginActivity : ComponentActivity() {
         platform = Platform.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_PLATFORM) }
             ?: run { finish(); return }
         setResult(RESULT_CANCELED)
+        if (platform == Platform.HEYBOX) {
+            cleaned = true
+            Toast.makeText(this, "小黑盒请使用扫码登录", Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         val root = buildNativeLayout()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -354,12 +360,14 @@ class WebLoginActivity : ComponentActivity() {
             Platform.TIEBA -> listOf("https://tieba.baidu.com/")
             Platform.BILIBILI -> listOf("https://api.bilibili.com/", "https://www.bilibili.com/")
             Platform.SKLAND -> listOf("https://www.skland.com/", "https://m.skland.com/")
+            Platform.HEYBOX -> return null
         }
         val allowed = when (platform) {
             Platform.NETEASE -> setOf("MUSIC_U", "__csrf")
             Platform.TIEBA -> setOf("BDUSS", "STOKEN")
             Platform.BILIBILI -> setOf("SESSDATA", "bili_jct", "buvid3", "DedeUserID", "DedeUserID__ckMd5", "bili_ticket", "bili_ticket_expires")
             Platform.SKLAND -> setOf("SK_OAUTH_CRED_KEY")
+            Platform.HEYBOX -> return null
         }
         val cookies = linkedMapOf<String, String>()
         urls.forEach { url -> CookieManager.getInstance().getCookie(url).orEmpty().split(';').forEach { raw ->
@@ -371,6 +379,7 @@ class WebLoginActivity : ComponentActivity() {
             Platform.TIEBA -> setOf("BDUSS")
             Platform.BILIBILI -> setOf("SESSDATA", "bili_jct")
             Platform.SKLAND -> setOf("SK_OAUTH_CRED_KEY")
+            Platform.HEYBOX -> return null
         }
         val complete=required.all {it in cookies}
         return if (complete) cookies.entries.joinToString("; ") { "${it.key}=${it.value}" } else null
@@ -505,11 +514,12 @@ class WebLoginActivity : ComponentActivity() {
         if (page == null) beginFreshSession() else loadLoginPage()
     }
     private fun loadLoginPage() {
+        val url = OfficialLoginPolicy.startUrl(platform) ?: return
         val browser = page ?: return
         pageTimeout?.cancel(); sklandProbeJob?.cancel(); browser.stopLoading()
         checking = false; loading = true; failedNavigation = false; autoChecks = 0; lastAutoFingerprint = ""
         concealPage("正在加载官方登录页…"); showStatus("正在加载官网，请稍候。加载异常会在上方显示原因。")
-        armPageTimeout(); browser.loadUrl(OfficialLoginPolicy.startUrl(platform))
+        armPageTimeout(); browser.loadUrl(url)
     }
     private fun closeSession(credential: String?) {
         if (closing) return

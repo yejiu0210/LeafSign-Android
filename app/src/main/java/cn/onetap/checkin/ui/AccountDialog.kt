@@ -93,6 +93,8 @@ internal fun AccountDialog(app: CheckInApp, previous: Account?, onClose: () -> U
                     Platform.entries.chunked(2).forEach { pair ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             pair.forEach { p -> PlatformChoice(p, platform == p, !saving, Modifier.weight(1f)) { if (platform != p) { platform = p; credential = "" } } }
+                            // 平台数为奇数时，最后一行补一个空位，保持两列等宽
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
                         }
                     }
                 } else Row(verticalAlignment = Alignment.CenterVertically) {
@@ -104,7 +106,8 @@ internal fun AccountDialog(app: CheckInApp, previous: Account?, onClose: () -> U
                     Text("用官方 App 扫码登录（推荐）")
                 }
                 Hint("跳转到已登录的${officialApps(platform).first().name} App 确认即可，支持分身 App。")
-                OutlinedButton(onClick = {
+                // 小黑盒的网页登录在手机 WebView 里一直不稳定（0.4.x 的问题），只提供扫码和手动导入。
+                if (platform != Platform.HEYBOX) OutlinedButton(onClick = {
                     if (!loggingIn) {
                         loggingIn = true
                         try { officialLogin.launch(Intent(context, WebLoginActivity::class.java).putExtra(WebLoginActivity.EXTRA_PLATFORM, platform.name)) }
@@ -113,7 +116,7 @@ internal fun AccountDialog(app: CheckInApp, previous: Account?, onClose: () -> U
                 }, enabled = !saving && !loggingIn, modifier = Modifier.fillMaxWidth()) {
                     Text(if (loggingIn) "官方登录处理中…" else "官方网页登录并自动导入")
                 }
-                Hint("扫码不方便时，可以在网页里登录，完成后自动保存")
+                if (platform != Platform.HEYBOX) Hint("扫码不方便时，可以在网页里登录，完成后自动保存")
                 if (previous != null) Hint("请登录同一个账号（${previous.displayName}），其他账号请另外添加")
                 TextButton(onClick = { manual = !manual }, contentPadding = PaddingValues(0.dp)) { Text("手动导入凭证（备用）") }
                 if (manual) {
@@ -169,6 +172,7 @@ private fun credentialHint(p: Platform) = when (p) {
     Platform.TIEBA -> "BDUSS 值，或含 BDUSS 的百度 Cookie"
     Platform.SKLAND -> "鹰角通行证 token，或官方凭证 JSON"
     Platform.BILIBILI -> "含 SESSDATA 和 bili_jct 的 B 站 Cookie"
+    Platform.HEYBOX -> "含 heybox_id 和 pkey 的小黑盒 Cookie"
 }
 
 private fun officialUrl(p: Platform) = when (p) {
@@ -176,6 +180,7 @@ private fun officialUrl(p: Platform) = when (p) {
     Platform.TIEBA -> "https://tieba.baidu.com/"
     Platform.SKLAND -> "https://user.hypergryph.com/login"
     Platform.BILIBILI -> "https://big.bilibili.com/mobile/index?location=drawExperienceModule"
+    Platform.HEYBOX -> "https://www.xiaoheihe.cn/"
 }
 
 private fun credentialHelp(p: Platform) = when (p) {
@@ -183,4 +188,5 @@ private fun credentialHelp(p: Platform) = when (p) {
     Platform.TIEBA -> "在电脑浏览器登录贴吧网页版，打开开发者工具 → 存储 → Cookies，复制 BDUSS（有 STOKEN 可以一起填）。失效后重新登录获取。"
     Platform.SKLAND -> "推荐用上方的扫码或网页登录。已有鹰角通行证 token 或 {\"cred\":\"…\"} 的话，也可以在这里填入。"
     Platform.BILIBILI -> "在电脑浏览器登录 B 站网页版，打开开发者工具 → 存储 → Cookies，复制 SESSDATA 和 bili_jct（DedeUserID 可选）。等级加速包需要大会员，并且当天在官方看过 1 分钟视频。"
+    Platform.HEYBOX -> "推荐用上方的扫码登录。也可以在电脑浏览器登录小黑盒网页版，打开开发者工具 → 存储 → Cookies → xiaoheihe.cn，复制 heybox_id 和 pkey 填在这里。"
 }

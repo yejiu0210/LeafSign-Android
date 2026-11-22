@@ -5,17 +5,19 @@ import java.net.URI
 
 /** Main-frame login navigation is an exact-host HTTPS allowlist, independent of UI state. */
 internal object OfficialLoginPolicy {
-    fun startUrl(platform: Platform): String = when (platform) {
+    fun startUrl(platform: Platform): String? = when (platform) {
         Platform.NETEASE -> "https://music.163.com/"
         Platform.TIEBA -> "https://tieba.baidu.com/"
         Platform.SKLAND -> "https://user.hypergryph.com/login"
         Platform.BILIBILI -> "https://passport.bilibili.com/login"
+        Platform.HEYBOX -> null
     }
     private fun hosts(platform: Platform): Set<String> = when (platform) {
         Platform.NETEASE -> setOf("music.163.com", "y.music.163.com", "st.music.163.com", "reg.163.com", "dl.reg.163.com", "passport.163.com")
         Platform.TIEBA -> setOf("tieba.baidu.com", "wappass.baidu.com", "passport.baidu.com", "wappass.bdimg.com")
         Platform.SKLAND -> setOf("www.skland.com", "m.skland.com", "web-api.skland.com", "user.hypergryph.com", "as.hypergryph.com")
         Platform.BILIBILI -> setOf("passport.bilibili.com", "www.bilibili.com", "m.bilibili.com", "big.bilibili.com", "api.bilibili.com")
+        Platform.HEYBOX -> emptySet()
     }
     private fun parse(url: String): URI? = try { URI(url) } catch (_: Exception) { null }
     private fun secure(uri: URI) = uri.scheme == "https" && uri.host != null &&

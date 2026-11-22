@@ -80,8 +80,9 @@ internal fun parseBaiduJsonp(body: String): JSONObject {
     return parseWrappedJson(decoded)
 }
 
-internal fun cookieValues(lines: List<String>, allowed: Set<String>): LinkedHashMap<String, String> {
-    val result = linkedMapOf<String, String>()
+internal fun cookieValues(
+    lines: List<String>, allowed: Set<String>, result: MutableMap<String, String> = linkedMapOf()
+): MutableMap<String, String> {
     for (line in lines) {
         val part = line.substringBefore(';').trim()
         val split = part.indexOf('=')

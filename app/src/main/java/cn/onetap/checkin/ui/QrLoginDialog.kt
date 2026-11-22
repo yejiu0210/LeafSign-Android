@@ -58,6 +58,7 @@ internal fun officialApps(p: Platform): List<OfficialApp> = when (p) {
     Platform.TIEBA -> listOf(OfficialApp("com.baidu.tieba", "百度贴吧"), OfficialApp("com.baidu.searchbox", "百度"),
         OfficialApp("com.baidu.netdisk", "百度网盘"))
     Platform.SKLAND -> listOf(OfficialApp("com.hypergryph.skland", "森空岛"), OfficialApp("com.hypergryph.arknights", "明日方舟"))
+    Platform.HEYBOX -> listOf(OfficialApp("com.max.xiaoheihe", "小黑盒"))
 }
 
 private fun Context.installed(pkg: String) = try {
