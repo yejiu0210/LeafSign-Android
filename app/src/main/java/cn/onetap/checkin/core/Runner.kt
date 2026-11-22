@@ -20,7 +20,7 @@ import java.io.IOException
 class Runner(private val store: StateStore, private val adapters: Map<Platform,PlatformAdapter>) {
     companion object { val mutex = Mutex() }
     fun recover() {
-        if (mutex.tryLock()) try { store.update { old -> val s=Rules.retireOrdinaryMusicTask(old);s.copy(records=s.records.map { if(it.status==TaskStatus.RUNNING) it.copy(status=TaskStatus.INTERRUPTED,message="上次进程中断，请查询或重试确认") else it }) } } finally { mutex.unlock() }
+        if (mutex.tryLock()) try { store.update { old -> val s=Rules.retireOrdinaryMusicTask(old);s.copy(records=s.records.map { if(it.status==TaskStatus.RUNNING) it.copy(status=TaskStatus.INTERRUPTED,message="上次没跑完，结果未确认") else it }) } } finally { mutex.unlock() }
     }
     suspend fun run(onlyFailed: Boolean = false, progress: (RunProgress) -> Unit = {}): Int =
         run(onlyFailed, discoverNewTargets = true, progress)
@@ -61,7 +61,7 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
             var validatedCredential = ""
             val actual = readWithRetry { validatedCredential=currentCredential(account);adapter.validate(validatedCredential) }
             currentTargetIds=actual.targets.filter { it.bound }.map { it.id }.toSet()
-            if (actual.userId != account.userId) TaskResult(TaskStatus.EXPIRED,"当前凭证身份与保存账号不一致，请更新凭证") else {
+            if (actual.userId != account.userId) TaskResult(TaskStatus.EXPIRED,"登录的不是这个账号，请重新登录") else {
                 val previousIds = account.targets.map { it.id }.toSet()
                 val candidates = if (!discoverNewTargets) emptyList() else actual.targets.distinctBy { it.id }.filter {
                     it.bound && it.metadata["defaultEnabled"] != "false" && it.id !in previousIds
@@ -76,7 +76,7 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
                             targets=current.targets+added, enabled=current.enabled+added.map { it.id })
                     } else current
                 }) }
-                if (accepted) null else TaskResult(TaskStatus.EXPIRED,"校验期间账号或凭证已改变，请重新校验后执行")
+                if (accepted) null else TaskResult(TaskStatus.EXPIRED,"账号刚有变动，请再试一次")
             }
         } catch (e: CancellationException) { throw e } catch (e: Exception) { failure(e,account.credential) }
         return AccountPlan(account, (selected + if (validation == null) added else emptyList()).distinctBy { it.id }, currentTargetIds, validation)
@@ -103,7 +103,7 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
             val record = Record(accountId=account.id,platform=account.platform,accountLabel=account.note.ifBlank { account.displayName },targetId=target.id,task=listOf(target.game,target.label,target.server).filter { it.isNotBlank() }.joinToString(" · "),period=Rules.period(target),status=TaskStatus.RUNNING,message="正在执行")
             store.update { it.copy(records=(it.records+record).takeLast(3000)) }
             if (stopped == null && validation == null && target.id in currentTargetIds) reporter.start(record.id, label)
-            val result = validationResult ?: stopped?.interrupted() ?: if(target.id !in currentTargetIds) TaskResult(TaskStatus.UNBOUND,"此目标已不在当前账号的绑定或关注列表，未执行；请刷新账号") else try {
+            val result = validationResult ?: stopped?.interrupted() ?: if(target.id !in currentTargetIds) TaskResult(TaskStatus.UNBOUND,"这一项已不在账号里，请在账号页刷新") else try {
                 val known = readWithRetry { adapter.query(currentCredential(account),target) }
                 currentCoroutineContext().ensureActive()
                 val prior=Rules.latest(snapshot,account,target)
@@ -113,11 +113,11 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
                 } else Rules.completed(prior?.status?:TaskStatus.PENDING)
                 if (known != null && known.status != TaskStatus.PENDING) known
                 else if(known==null && priorCompletion) {
-                    if(freshCheckRequired) TaskResult(TaskStatus.UNKNOWN,"本次签到自检未能确认；保留历史记录，未重复发送签到，请稍后重试自检")
-                    else TaskResult(prior!!.status,"当前本地周期内已确认完成；平台无可靠只读查询，未重复发送",prior.diagnostic,prior.experienceState,stats=prior.stats)
+                    if(freshCheckRequired) TaskResult(TaskStatus.UNKNOWN,"结果未确认，请稍后重试")
+                    else TaskResult(prior!!.status,"今日已签到",prior.diagnostic,prior.experienceState,stats=prior.stats)
                 } else executeWithReconciliation(adapter,account,target)
             } catch(e: CancellationException) {
-                finish(record,TaskResult(TaskStatus.INTERRUPTED,"任务被中断，结果待确认"))
+                finish(record,TaskResult(TaskStatus.INTERRUPTED,"被中断了，结果未确认"))
                 reporter.finish(record.id, "$label · ${TaskStatus.INTERRUPTED.title}", TaskStatus.INTERRUPTED)
                 throw e
             }
@@ -145,9 +145,9 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
 
     private data class StopCause(val label: String, val status: TaskStatus) {
         fun interrupted(): TaskResult {
-            val reason = if (status == TaskStatus.EXPIRED) "登录失效，请先更新凭证" else "平台验证"
+            val reason = if (status == TaskStatus.EXPIRED) "重新登录" else "验证"
             return TaskResult(TaskStatus.INTERRUPTED,
-                "未执行：同账号的「$label」触发了$reason，为避免加重风控已暂停；处理后点「仅重试失败 / 待确认项」补签")
+                "已暂停：「$label」需要先$reason，处理好后点「仅重试失败项」")
         }
     }
 
@@ -175,14 +175,14 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
             if (status != null && status.status != TaskStatus.PENDING) return status
             if (status?.status == TaskStatus.PENDING) {
                 delay(1500)
-                return try { runInterruptible(Dispatchers.IO) { adapter.execute(currentCredential(account),target) } } catch (_: IOException) { TaskResult(TaskStatus.UNKNOWN,"重试请求超时，结果待确认；请稍后查询") }
+                return try { runInterruptible(Dispatchers.IO) { adapter.execute(currentCredential(account),target) } } catch (_: IOException) { TaskResult(TaskStatus.UNKNOWN,"请求超时，结果未确认") }
             }
-            return TaskResult(TaskStatus.UNKNOWN,"请求中断，服务端可能已执行；请稍后重试确认")
+            return TaskResult(TaskStatus.UNKNOWN,"请求中断，结果未确认")
         }
     }
     private fun currentCredential(account: Account): String = store.read().accounts.singleOrNull {
         it.id == account.id && it.platform == account.platform && it.userId == account.userId
-    }?.credential?.takeIf { it.isNotBlank() } ?: throw AdapterException(TaskStatus.EXPIRED,"本地授权已退出或账号已删除")
+    }?.credential?.takeIf { it.isNotBlank() } ?: throw AdapterException(TaskStatus.EXPIRED,"账号已退出或已删除")
     private suspend fun <T> readWithRetry(action: () -> T): T {
         try { return runInterruptible(Dispatchers.IO) { action() } } catch (_: IOException) { delay(900); return runInterruptible(Dispatchers.IO) { action() } }
     }
@@ -203,6 +203,6 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
     private fun failure(e: Exception, credential: String) = when(e) {
         is AdapterException -> TaskResult(e.status,Rules.safeMessage(e.message,credential),Rules.safeDiagnostic(e.diagnostic))
         is IOException -> TaskResult(TaskStatus.FAILED,"网络连接失败，请检查网络后重试","exception=${e.javaClass.simpleName}")
-        else -> TaskResult(TaskStatus.UNKNOWN,"响应无法可靠确认，请更新凭证或查看接入说明","exception=${e.javaClass.simpleName}")
+        else -> TaskResult(TaskStatus.UNKNOWN,"结果未确认，请稍后重试","exception=${e.javaClass.simpleName}")
     }
 }

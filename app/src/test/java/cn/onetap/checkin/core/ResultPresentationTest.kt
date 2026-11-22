@@ -24,7 +24,9 @@ class ResultPresentationTest {
 
     @Test fun hidesHedgingExperienceNotes() {
         val bilibili=record(Platform.BILIBILI,"level-acceleration")
-        assertEquals("官方确认经验已领取",ResultPresentation.experienceState(bilibili.copy(experienceState="官方确认经验已领取；未额外核对经验流水")))
+        // 「已领取」和右侧状态重复，不再单独显示
+        assertEquals("",ResultPresentation.experienceState(bilibili.copy(experienceState="官方确认经验已领取；未额外核对经验流水")))
+        assertEquals("",ResultPresentation.experienceState(bilibili.copy(experienceState="平台显示已领取")))
         assertEquals("",ResultPresentation.experienceState(bilibili.copy(experienceState="未额外核对经验流水")))
     }
 

@@ -45,10 +45,10 @@ class BilibiliAdapter internal constructor(
             progressStat("经验", levelInfo?.statLong("current_exp"), levelInfo?.statLong("next_exp"))
         )
         val eligibility = when {
-            vipStatus == 0 -> "当前未开通有效大会员"
-            vipStatus != 1 -> "大会员资格需由官方会员中心确认"
-            level == 0 -> "需先在官方完成答题成为正式会员"
-            else -> "有效大会员；领取前需在官方观看视频 1 分钟"
+            vipStatus == 0 -> "未开通大会员"
+            vipStatus != 1 -> "大会员状态未知"
+            level == 0 -> "需要先答题转正"
+            else -> "大会员 · 每天先看 1 分钟视频再领取"
         }
         return Identity(
             uid,
@@ -68,7 +68,7 @@ class BilibiliAdapter internal constructor(
                 )
             ), Target(BIGPOINT_ID,BIGPOINT_TYPE,if(vipStatus==1) "大积分签到" else "大积分签到（需大会员）",bound=vipStatus==1,
                 metadata=mapOf("ownerUserId" to uid,"resetZone" to "Asia/Shanghai","resetHour" to "0","defaultEnabled" to "true"))),
-            "UID $uid · $eligibility；支持等级加速包与大积分签到，不执行自动观看"
+            "UID $uid · $eligibility"
         )
     }
 
@@ -96,7 +96,7 @@ class BilibiliAdapter internal constructor(
         if (code == 69198) {
             val confirmed = queryState(cookies, target)
             return if (confirmed.status == TaskStatus.ALREADY) confirmed
-            else TaskResult(TaskStatus.UNKNOWN, "经验领取结果未确认", "experience/add; code=69198", "到账状态待确认")
+            else TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", "experience/add; code=69198", "")
         }
         checkCode(response, "experience/add")
         val result = parseClaimResponse(response)
@@ -110,17 +110,17 @@ class BilibiliAdapter internal constructor(
         )
         checkCode(response, "vip_center/v2")
         val data = response.optJSONObject("data")
-            ?: return TaskResult(TaskStatus.UNKNOWN, "会员中心响应不完整", "vip_center/v2; missing data")
+            ?: return TaskResult(TaskStatus.UNKNOWN, "暂时无法查询，请稍后重试", "vip_center/v2; missing data")
         val vip = data.optJSONObject("vip_info")
-            ?: return TaskResult(TaskStatus.UNKNOWN, "无法确认大会员资格", "vip_center/v2; missing vip_info")
+            ?: return TaskResult(TaskStatus.UNKNOWN, "暂时无法确认大会员状态", "vip_center/v2; missing vip_info")
         membershipProblem(vip, target.metadata["ownerUserId"])?.let { return it }
         val experience = data.optJSONObject("experience")
-            ?: return TaskResult(TaskStatus.NOT_CONNECTED, "暂时无法查询等级加速包", "vip_center/v2; no experience module", "未查询到发放状态")
+            ?: return TaskResult(TaskStatus.NOT_CONNECTED, "暂时无法查询等级加速包", "vip_center/v2; no experience module", "")
         val level = strictInt(experience.opt("level"))
-            ?: return TaskResult(TaskStatus.UNKNOWN, "正式会员等级字段缺失或格式未知", "vip_center/v2; invalid experience.level", "到账状态待确认")
-        if (level < 0) return TaskResult(TaskStatus.UNKNOWN, "正式会员等级字段未知", "vip_center/v2; invalid experience.level", "到账状态待确认")
+            ?: return TaskResult(TaskStatus.UNKNOWN, "暂时无法确认账号等级", "vip_center/v2; invalid experience.level", "")
+        if (level < 0) return TaskResult(TaskStatus.UNKNOWN, "暂时无法确认账号等级", "vip_center/v2; invalid experience.level", "")
         if (level == 0)
-            return TaskResult(TaskStatus.INELIGIBLE, "需先在官方完成答题成为正式会员", "vip_center/v2; experience.level=0", "未领取")
+            return TaskResult(TaskStatus.INELIGIBLE, "需要先答题转正", "vip_center/v2; experience.level=0", "")
         val result = parseExperienceState(experience)
         return if (result.status == TaskStatus.ALREADY) withLevelStats(result, target) else result
     }
@@ -131,11 +131,11 @@ class BilibiliAdapter internal constructor(
     private fun get(url: String, headers: Map<String,String>): JSONObject = exchange?.invoke("GET",url,null,headers) ?: net.get(url,headers)
 
     private fun bigPointIdentityProblem(credential: String, target: Target): TaskResult? {
-        if (!target.bound) return TaskResult(TaskStatus.INELIGIBLE,"大积分签到需有效大会员")
+        if (!target.bound) return TaskResult(TaskStatus.INELIGIBLE,"大积分需要大会员")
         val identity = validate(credential)
         if (identity.userId != target.metadata["ownerUserId"])
-            return TaskResult(TaskStatus.EXPIRED,"当前凭证与目标账号不一致，请重新校验账号")
-        return if (identity.targets.none { it.id==BIGPOINT_ID && it.bound }) TaskResult(TaskStatus.INELIGIBLE,"大积分签到需有效大会员") else null
+            return TaskResult(TaskStatus.EXPIRED,"账号已变化，请在账号页刷新")
+        return if (identity.targets.none { it.id==BIGPOINT_ID && it.bound }) TaskResult(TaskStatus.INELIGIBLE,"大积分需要大会员") else null
     }
 
     private fun queryBigPoint(cookies: Map<String,String>): TaskResult? {
@@ -174,7 +174,7 @@ class BilibiliAdapter internal constructor(
         when (code) {
             0 -> return
             -101, -401 -> throw AdapterException(TaskStatus.EXPIRED, "登录已失效，请重新登录", "$endpoint; code=$code")
-            -111 -> throw AdapterException(TaskStatus.EXPIRED, "Cookie 中的校验凭证无效，请更新完整 Cookie", "$endpoint; code=$code")
+            -111 -> throw AdapterException(TaskStatus.EXPIRED, "登录信息不完整，请重新登录", "$endpoint; code=$code")
             -352, -412, 73319 -> throw AdapterException(TaskStatus.MANUAL, "需要在哔哩哔哩 App 完成验证", "$endpoint; code=$code")
             6034007 -> throw AdapterException(TaskStatus.MANUAL, "请求太频繁，请稍后重试", "$endpoint; code=$code")
             else -> throw AdapterException(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", "$endpoint; code=$code")
@@ -183,7 +183,7 @@ class BilibiliAdapter internal constructor(
 
     private fun requireTarget(target: Target) {
         if (target.type != TYPE || target.id != "vip-level-acceleration")
-            throw AdapterException(TaskStatus.NOT_CONNECTED, "不支持的哔哩哔哩任务类型")
+            throw AdapterException(TaskStatus.NOT_CONNECTED, "不支持这个任务")
     }
 
     private fun headers(cookies: Map<String, String>) = mapOf(
@@ -210,7 +210,7 @@ class BilibiliAdapter internal constructor(
             val balance = numericValue(data.optJSONObject("big_point")?.opt("point"))
             return if (signed) TaskResult(TaskStatus.ALREADY,"今日已签到","code=0",
                 stats = listOfNotNull(balance?.let { Stat("大积分", it) }))
-                else TaskResult(TaskStatus.PENDING,"今日大积分尚未签到","code=0")
+                else TaskResult(TaskStatus.PENDING,"今日尚未签到","code=0")
         }
 
         internal fun parseBigPointSign(response: JSONObject): TaskResult {
@@ -221,13 +221,13 @@ class BilibiliAdapter internal constructor(
             if (code == 0 && data != null && data.length()>0) {
                 val score = numericValue(data.opt("score")) ?: numericValue(data.opt("vipScore"))
                 val count = numericValue(data.opt("count")); val duration = numericValue(data.opt("duration"))
-                val message = "大积分签到成功"+(score?.let { "，获得 $it 积分" } ?: "") +
+                val message = "签到成功"+(score?.let { "，获得 $it 积分" } ?: "") +
                     (if(count!=null && duration!=null) "，连续签到 $count/$duration 天" else "")
                 return TaskResult(TaskStatus.SUCCESS,message,diagnostic)
             }
             val message = response.optString("message")
-            if (message.contains("已签到") || message.contains("已完成")) return TaskResult(TaskStatus.ALREADY,"今日大积分已签到",diagnostic)
-            if (message.contains("大会员")) return TaskResult(TaskStatus.INELIGIBLE,"大积分签到需有效大会员",diagnostic)
+            if (message.contains("已签到") || message.contains("已完成")) return TaskResult(TaskStatus.ALREADY,"今日已签到",diagnostic)
+            if (message.contains("大会员")) return TaskResult(TaskStatus.INELIGIBLE,"大积分需要大会员",diagnostic)
             return TaskResult(TaskStatus.UNKNOWN,"结果未确认，请稍后重试",diagnostic)
         }
 
@@ -247,17 +247,17 @@ class BilibiliAdapter internal constructor(
 
         internal fun membershipProblem(vip: JSONObject, expectedUid: String?): TaskResult? {
             val mid = strictLong(vip.opt("mid"))
-                ?: return TaskResult(TaskStatus.UNKNOWN, "会员中心 UID 格式未知，无法确认身份", "vip_center/v2; invalid mid")
+                ?: return TaskResult(TaskStatus.UNKNOWN, "暂时无法确认账号", "vip_center/v2; invalid mid")
             if (mid == 0L) return TaskResult(TaskStatus.EXPIRED, "登录已失效，请重新登录", "vip_center/v2; mid=0")
-            if (mid < 0L) return TaskResult(TaskStatus.UNKNOWN, "会员中心 UID 无效，无法确认身份", "vip_center/v2; invalid mid")
+            if (mid < 0L) return TaskResult(TaskStatus.UNKNOWN, "暂时无法确认账号", "vip_center/v2; invalid mid")
             if (expectedUid.isNullOrBlank() || expectedUid != mid.toString())
-                return TaskResult(TaskStatus.MANUAL, "当前凭证的 UID 与任务账号不一致，请重新校验账号", "vip_center/v2; owner mismatch")
+                return TaskResult(TaskStatus.MANUAL, "账号已变化，请在账号页刷新", "vip_center/v2; owner mismatch")
             val status = strictInt(vip.opt("vip_status"))
-                ?: return TaskResult(TaskStatus.UNKNOWN, "大会员资格字段缺失或格式未知", "vip_center/v2; invalid vip_status")
+                ?: return TaskResult(TaskStatus.UNKNOWN, "暂时无法确认大会员状态", "vip_center/v2; invalid vip_status")
             return when (status) {
                 1 -> null
-                0, 2, 3 -> TaskResult(TaskStatus.INELIGIBLE, "当前没有可领取此权益的有效大会员资格", "vip_center/v2; vip_status=$status", "未领取")
-                else -> TaskResult(TaskStatus.UNKNOWN, "平台返回未识别的大会员资格状态", "vip_center/v2; vip_status=$status")
+                0, 2, 3 -> TaskResult(TaskStatus.INELIGIBLE, "需要大会员才能领取", "vip_center/v2; vip_status=$status", "")
+                else -> TaskResult(TaskStatus.UNKNOWN, "暂时无法确认大会员状态", "vip_center/v2; vip_status=$status")
             }
         }
 
@@ -266,27 +266,27 @@ class BilibiliAdapter internal constructor(
             val data = response.optJSONObject("data")
             val type = strictInt(data?.opt("type"))
             if (code != 0 || data == null || data.opt("is_grant") !is Boolean || type == null)
-                return TaskResult(TaskStatus.UNKNOWN, "领取结果未确认，请稍后重试", "experience/add; code=$code; unconfirmed grant fields", "到账状态待确认")
+                return TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", "experience/add; code=$code; unconfirmed grant fields", "")
             if (!data.getBoolean("is_grant"))
-                return TaskResult(TaskStatus.FAILED, "平台未确认领取成功", "experience/add; code=0; is_grant=false", "未确认发放")
+                return TaskResult(TaskStatus.FAILED, "领取结果未确认", "experience/add; code=0; is_grant=false", "")
             return if (type == 0) {
-                TaskResult(TaskStatus.SUCCESS, "等级加速包领取成功", "experience/add; code=0; is_grant=true; type=0", "官方确认经验已领取；未额外核对经验流水")
+                TaskResult(TaskStatus.SUCCESS, "领取成功", "experience/add; code=0; is_grant=true; type=0", "")
             } else {
-                TaskResult(TaskStatus.SUCCESS, "等级加速包领取已受理", "experience/add; code=0; is_grant=true; type=$type", "平台提示系统维护，经验稍后发放；尚未确认到账")
+                TaskResult(TaskStatus.SUCCESS, "已领取，经验稍后到账", "experience/add; code=0; is_grant=true; type=$type", "")
             }
         }
 
         internal fun parseExperienceState(experience: JSONObject): TaskResult {
             val state = strictInt(experience.opt("state"))
             if (state == null)
-                return TaskResult(TaskStatus.UNKNOWN, "等级加速包状态字段缺失", "vip_center/v2; missing experience.state", "到账状态待确认")
+                return TaskResult(TaskStatus.UNKNOWN, "暂时无法确认领取状态", "vip_center/v2; missing experience.state", "")
             return when (state) {
-                0 -> TaskResult(TaskStatus.PENDING, "已满足观看条件，可以领取等级加速包", "vip_center/v2; experience.state=0", "尚未领取")
-                1 -> TaskResult(TaskStatus.ALREADY, "今日等级加速包已领取", "vip_center/v2; experience.state=1", "平台显示已领取；未额外核对经验流水")
-                2 -> TaskResult(TaskStatus.INELIGIBLE, "请先在哔哩哔哩手动观看视频 1 分钟，然后重试", "vip_center/v2; experience.state=2", "尚未满足观看条件，未领取")
-                3 -> TaskResult(TaskStatus.FAILED, "等级加速包领取失败", "vip_center/v2; experience.state=3", "未确认发放")
-                4 -> TaskResult(TaskStatus.UNKNOWN, "等级加速包正在处理", "vip_center/v2; experience.state=4", "到账状态待确认")
-                else -> TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", "vip_center/v2; experience.state=$state", "到账状态待确认")
+                0 -> TaskResult(TaskStatus.PENDING, "可以领取", "vip_center/v2; experience.state=0", "")
+                1 -> TaskResult(TaskStatus.ALREADY, "今日已领取", "vip_center/v2; experience.state=1", "")
+                2 -> TaskResult(TaskStatus.INELIGIBLE, "先在 B 站看 1 分钟视频再来领取", "vip_center/v2; experience.state=2", "")
+                3 -> TaskResult(TaskStatus.FAILED, "领取失败", "vip_center/v2; experience.state=3", "")
+                4 -> TaskResult(TaskStatus.UNKNOWN, "正在处理", "vip_center/v2; experience.state=4", "")
+                else -> TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", "vip_center/v2; experience.state=$state", "")
             }
         }
 

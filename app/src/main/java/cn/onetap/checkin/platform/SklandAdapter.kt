@@ -78,7 +78,7 @@ class SklandAdapter internal constructor(
             session.session.userId,
             names.joinToString(" / ").ifBlank { "森空岛 ${session.session.userId}" },
             targets,
-            "森空岛 ID ${session.session.userId}；游戏与角色由官方绑定接口获取；接口资料已核对，尚待本人账号验收"
+            "森空岛 ID ${session.session.userId}"
         )
     }
 
@@ -87,7 +87,7 @@ class SklandAdapter internal constructor(
         return withSession(credential) { session ->
             val current = ownedTarget(session, target)
             if (current.metadata["roleMissing"] == "true")
-                return@withSession TaskResult(TaskStatus.UNKNOWN, "未找到终末地角色，请重新校验账号")
+                return@withSession TaskResult(TaskStatus.UNKNOWN, "找不到终末地角色，请在账号页刷新")
             current.metadata["unavailable"]?.takeIf { it.isNotBlank() }?.let {
                 return@withSession TaskResult(TaskStatus.INELIGIBLE, it)
             }
@@ -106,7 +106,7 @@ class SklandAdapter internal constructor(
         return withSession(credential) { session ->
             val current = ownedTarget(session, target)
             if (current.metadata["roleMissing"] == "true")
-                return@withSession TaskResult(TaskStatus.UNKNOWN, "未找到终末地角色，请重新校验账号")
+                return@withSession TaskResult(TaskStatus.UNKNOWN, "找不到终末地角色，请在账号页刷新")
             current.metadata["unavailable"]?.takeIf { it.isNotBlank() }?.let {
                 return@withSession TaskResult(TaskStatus.INELIGIBLE, it)
             }
@@ -116,7 +116,7 @@ class SklandAdapter internal constructor(
 
     private fun authorize(input: String): Session {
         val value = input.trim()
-        if (value.isBlank()) throw AdapterException(TaskStatus.EXPIRED, "请在本机输入森空岛登录凭证")
+        if (value.isBlank()) throw AdapterException(TaskStatus.EXPIRED, "请填写登录凭证")
         val imported = if (value.startsWith("{")) try { JSONObject(value) } catch (_: Exception) {
             throw AdapterException(TaskStatus.FAILED, "凭证 JSON 格式不正确")
         } else null
@@ -132,7 +132,7 @@ class SklandAdapter internal constructor(
             cred = validHeaderSecret(explicitCred)
             val response = net.get(BASE + "/api/v1/auth/refresh", plainHeaders(did) + ("cred" to cred))
             data = checkedData(response, "code", "刷新森空岛会话")
-            signToken = requiredValue(data, "token", "刷新返回缺少签名凭证")
+            signToken = requiredValue(data, "token", "登录信息不完整，请重新登录")
         } else {
             val token = imported?.optJSONObject("data")?.optString("content")?.takeIf { it.isNotBlank() }
                 ?: imported?.optString("token")?.takeIf { it.isNotBlank() }
@@ -144,21 +144,21 @@ class SklandAdapter internal constructor(
                 JSONObject().put("appCode", "4ca99fa6b56cc2ba").put("token", token).put("type", 0),
                 plainHeaders(did)
             )
-            val code = requiredValue(checkedData(grant, "status", "森空岛授权"), "code", "授权返回缺少临时代码")
+            val code = requiredValue(checkedData(grant, "status", "森空岛授权"), "code", "登录信息不完整，请重新登录")
             val response = net.postJson(
                 BASE + "/api/v1/user/auth/generate_cred_by_code",
                 JSONObject().put("code", code).put("kind", 1), plainHeaders(did)
             )
             data = checkedData(response, "code", "生成森空岛会话")
-            cred = validHeaderSecret(requiredValue(data, "cred", "授权返回缺少会话凭证"))
-            signToken = requiredValue(data, "token", "授权返回缺少签名凭证")
+            cred = validHeaderSecret(requiredValue(data, "cred", "登录信息不完整，请重新登录"))
+            signToken = requiredValue(data, "token", "登录信息不完整，请重新登录")
         }
         var session = Session(cred, signToken, "", did)
         // Do not use the login form's claimed identity or a game UID as the platform account ID.
         val identityPath = "/api/v1/user/teenager"
         val identity = checkedData(net.get(BASE + identityPath, signedHeaders(session, identityPath)), "code", "校验森空岛身份")
         val userId = identity.optJSONObject("teenager")?.let { stringValue(it, "userId") }.orEmpty()
-        if (userId.isBlank()) throw AdapterException(TaskStatus.UNKNOWN, "官方未返回可确认的森空岛身份", diagnostic("identity", identity))
+        if (userId.isBlank()) throw AdapterException(TaskStatus.UNKNOWN, "暂时无法确认账号", diagnostic("identity", identity))
         session = session.copy(userId = userId)
         return session
     }
@@ -167,15 +167,15 @@ class SklandAdapter internal constructor(
         val path = "/api/v1/game/player/binding"
         val response = sessionRequest(session, path)
         val data = checkedData(response, "code", "获取森空岛绑定角色")
-        val apps = data.optJSONArray("list") ?: throw AdapterException(TaskStatus.UNKNOWN, "绑定返回缺少游戏列表", diagnostic("binding", response))
+        val apps = data.optJSONArray("list") ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取角色", diagnostic("binding", response))
         return parseTargets(session.session.userId, apps)
     }
 
     private fun ownedTarget(session: SessionAccess, target: Target): Target {
         if (target.metadata["ownerUserId"] != session.session.userId)
-            throw AdapterException(TaskStatus.FAILED, "凭证与此角色所属森空岛账号不一致，请重新校验账号")
+            throw AdapterException(TaskStatus.FAILED, "账号已变化，请在账号页刷新")
         return loadTargets(session).firstOrNull { it.id == target.id && it.bound }
-            ?: throw AdapterException(TaskStatus.UNBOUND, "角色已不在此账号的绑定列表，请校验账号刷新角色")
+            ?: throw AdapterException(TaskStatus.UNBOUND, "角色已解绑，请在账号页刷新")
     }
 
     private fun queryWithSession(session: SessionAccess, target: Target): TaskResult {
@@ -256,7 +256,7 @@ class SklandAdapter internal constructor(
                 val app = (0 until apps.length()).mapNotNull { apps.optJSONObject(it) }.firstOrNull { it.optString("appCode") == kind }
                 val bindings = app?.optJSONArray("bindingList")
                 if (app != null && bindings == null)
-                    throw AdapterException(TaskStatus.UNKNOWN, "$game 绑定列表格式变化，结果待确认")
+                    throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取${game}角色")
                 val common = mapOf(
                     "ownerUserId" to userId, "resetZone" to "Asia/Shanghai", "resetHour" to "0",
                     "resetVerified" to "false", "resetEvidence" to "官方UTC+8每日一次；自然日0点推导；官方明确每月1日00:00重置月进度；服务端状态优先"
@@ -266,10 +266,10 @@ class SklandAdapter internal constructor(
                     continue
                 }
                 for (i in 0 until bindings.length()) {
-                    val binding = bindings.optJSONObject(i) ?: throw AdapterException(TaskStatus.UNKNOWN, "$game 绑定对象格式变化")
-                    val uid = requiredValue(binding, "uid", "$game 绑定对象缺少 UID")
+                    val binding = bindings.optJSONObject(i) ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取${game}角色")
+                    val uid = requiredValue(binding, "uid", "暂时无法读取${game}角色")
                     if (kind == ARK) {
-                        val server = requiredValue(binding, "channelMasterId", "明日方舟绑定缺少区服标识")
+                        val server = requiredValue(binding, "channelMasterId", "暂时无法读取明日方舟角色")
                         val name = stringValue(binding, "nickName").ifBlank { "角色 $uid" }
                         targets += Target("$kind:$uid:$server", kind, "$name · UID $uid", game,
                             stringValue(binding, "channelName").ifBlank { "区服 $server" }, metadata = common + mapOf(
@@ -285,16 +285,16 @@ class SklandAdapter internal constructor(
                             continue
                         }
                         for (j in 0 until roles.length()) {
-                            val role = roles.optJSONObject(j) ?: throw AdapterException(TaskStatus.UNKNOWN, "终末地角色对象格式变化")
-                            val roleId = requiredValue(role, "roleId", "终末地角色缺少 roleId")
-                            val serverId = requiredValue(role, "serverId", "终末地角色缺少 serverId")
+                            val role = roles.optJSONObject(j) ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取终末地角色")
+                            val roleId = requiredValue(role, "roleId", "暂时无法读取终末地角色")
+                            val serverId = requiredValue(role, "serverId", "暂时无法读取终末地角色")
                             val name = stringValue(role, "nickname").ifBlank { "角色 $roleId" }
                             targets += Target("$kind:$uid:$roleId:$serverId", kind, "$name · UID $roleId", game,
                                 stringValue(role, "serverName").ifBlank { "区服 $serverId" }, metadata = common + mapOf(
                                     "uid" to uid, "roleId" to roleId, "serverId" to serverId,
                                     "unavailable" to when {
                                         binding.optBoolean("isDelete") -> "绑定角色已删除，请在森空岛处理"
-                                        role.optBoolean("isBanned") -> "此角色已封禁，停止执行"
+                                        role.optBoolean("isBanned") -> "此角色已被封禁"
                                         else -> ""
                                     }
                                 ))
@@ -418,7 +418,7 @@ class SklandAdapter internal constructor(
             val data = response.optJSONObject("data")
                 ?: return TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", diagnostic(kind, response))
             val awards = if (kind == ARK) {
-                val list = data.optJSONArray("awards") ?: return TaskResult(TaskStatus.UNKNOWN, "签到奖励未确认", diagnostic(kind, response))
+                val list = data.optJSONArray("awards") ?: return TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", diagnostic(kind, response))
                 objects(list).mapNotNull { item ->
                     awardText(item.optJSONObject("resource"), item.opt("count") as? Number)
                 }
@@ -432,13 +432,13 @@ class SklandAdapter internal constructor(
                     awardText(item, item.opt("count") as? Number)
                 }
             } else return TaskResult(TaskStatus.NOT_CONNECTED, "不支持的森空岛任务")
-            if (awards.isEmpty()) return TaskResult(TaskStatus.UNKNOWN, "签到奖励未确认", diagnostic(kind, response))
+            if (awards.isEmpty()) return TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", diagnostic(kind, response))
             return withAwards(TaskResult(TaskStatus.SUCCESS, "签到成功", diagnostic(kind, response)), awards)
         }
 
         private fun checkedData(response: JSONObject, field: String, stage: String): JSONObject {
             if (numericCode(response, field) != 0) throw responseError(response, field, stage)
-            return response.optJSONObject("data") ?: throw AdapterException(TaskStatus.UNKNOWN, "$stage 返回缺少业务数据", diagnostic(stage, response))
+            return response.optJSONObject("data") ?: throw AdapterException(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", diagnostic(stage, response))
         }
 
         private fun responseError(response: JSONObject, field: String, stage: String): AdapterException {
@@ -455,7 +455,7 @@ class SklandAdapter internal constructor(
             }
             val text = when (status) {
                 TaskStatus.EXPIRED -> "登录已失效，请重新登录"
-                TaskStatus.MANUAL -> "需要在森空岛 App 完成验证。如提示时间异常，请开启系统自动时间"
+                TaskStatus.MANUAL -> "需要在森空岛 App 验证（提示时间不对就打开自动时间）"
                 TaskStatus.UNBOUND -> "未绑定角色"
                 else -> "结果未确认，请稍后重试"
             }
@@ -474,7 +474,7 @@ class SklandAdapter internal constructor(
         private fun requiredValue(json: JSONObject, key: String, error: String): String = stringValue(json, key).takeIf { it.isNotBlank() }
             ?: throw AdapterException(TaskStatus.UNKNOWN, error)
         private fun requiredMeta(target: Target, key: String): String = target.metadata[key]?.takeIf { it.isNotBlank() }
-            ?: throw AdapterException(TaskStatus.UNKNOWN, "角色参数缺少 $key，请重新校验账号")
+            ?: throw AdapterException(TaskStatus.UNKNOWN, "角色信息不完整，请在账号页刷新")
         private fun validHeaderSecret(value: String): String {
             if (value.length > 4096 || value.isBlank() || value.any { it.code !in 33..126 })
                 throw AdapterException(TaskStatus.FAILED, "会话凭证格式不正确")

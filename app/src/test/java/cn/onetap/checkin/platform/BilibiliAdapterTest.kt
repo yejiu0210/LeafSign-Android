@@ -55,7 +55,7 @@ class BilibiliAdapterTest {
     @Test fun watchingIsRequiredAndNotAutomated() {
         val result = BilibiliAdapter.parseExperienceState(JSONObject("{\"state\":2}"))
         assertEquals(TaskStatus.INELIGIBLE, result.status)
-        assertTrue(result.message.contains("手动观看"))
+        assertTrue(result.message.contains("看 1 分钟视频"))
     }
 
     @Test fun codeZeroAloneNeverMeansExperienceGranted() {
@@ -70,8 +70,8 @@ class BilibiliAdapterTest {
         val delayed = BilibiliAdapter.parseClaimResponse(JSONObject("{\"code\":0,\"data\":{\"type\":1,\"is_grant\":true}}"))
         assertEquals(TaskStatus.SUCCESS, grant.status)
         assertEquals(TaskStatus.SUCCESS, delayed.status)
-        assertTrue(grant.experienceState.contains("官方确认"))
-        assertTrue(delayed.experienceState.contains("尚未确认到账"))
+        assertEquals("领取成功", grant.message)
+        assertEquals("已领取，经验稍后到账", delayed.message)
     }
 
     @Test fun fractionalOrCoercedStatusNeverBecomesClaimable() {

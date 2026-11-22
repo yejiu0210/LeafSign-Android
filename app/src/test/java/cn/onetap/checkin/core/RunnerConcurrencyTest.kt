@@ -110,7 +110,7 @@ class RunnerConcurrencyTest {
             assertEquals(1, store.read().records.count { it.status==status && it.message=="停止此账号" })
             val skippedRecords = store.read().records.filter { it.status == TaskStatus.INTERRUPTED }
             assertEquals(4, skippedRecords.size)
-            assertTrue(skippedRecords.all { it.message.startsWith("未执行：同账号的「目标") && it.diagnostic.isEmpty() })
+            assertTrue(skippedRecords.all { it.message.startsWith("已暂停：「目标") && it.diagnostic.isEmpty() })
             assertEquals(1, store.read().records.count { it.status==TaskStatus.SUCCESS })
         }
     }

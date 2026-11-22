@@ -1,5 +1,13 @@
 package cn.onetap.checkin.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -51,13 +59,26 @@ private fun StatProgress(s: Stat) {
             Text("$current / $total · $percent%", style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        LinearProgressIndicator(
-            progress = { percent / 100f },
-            modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            drawStopIndicator = {}
-        )
+        GradientProgressBar(current.toFloat() / total)
+    }
+}
+
+/** 一整根进度条：底槽和填充之间不留缝，填充从蓝渐变到紫（和图标配色一致），出现时从 0 涨到当前值。 */
+@Composable
+private fun GradientProgressBar(fraction: Float) {
+    var target by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(fraction) { target = fraction.coerceIn(0f, 1f) }
+    val animated by animateFloatAsState(target, tween(durationMillis = 900, easing = FastOutSlowInEasing), label = "progress")
+    val track = MaterialTheme.colorScheme.surfaceContainerHighest
+    val brush = Brush.horizontalGradient(listOf(Color(0xFF5B8CFF), Color(0xFF8C5BEF), Color(0xFFC07BFF)))
+    Canvas(Modifier.fillMaxWidth().height(8.dp)) {
+        val radius = CornerRadius(size.height / 2, size.height / 2)
+        drawRoundRect(track, cornerRadius = radius)
+        if (animated > 0f) {
+            // 填充宽度至少等于高度，进度很小时也是一个完整的圆点，不会变成细缝
+            val width = (size.width * animated).coerceAtLeast(size.height)
+            drawRoundRect(brush, size = Size(width, size.height), cornerRadius = radius)
+        }
     }
 }
 
@@ -170,7 +191,7 @@ private fun ForumCard(p: ForumPair) {
             p.sign?.third?.let { StatsView(it.stats) }
             // 只有出问题时才显示具体说明，正常完成的不重复写「今日已签到」
             listOfNotNull(p.sign, p.like).filter { bucketOf(it.second) != Bucket.DONE && it.third != null }
-                .forEach { Hint(it.third!!.message) }
+                .forEach { Hint(ResultPresentation.message(it.third!!)) }
         }
     }
 }

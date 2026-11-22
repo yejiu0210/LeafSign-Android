@@ -1,6 +1,7 @@
 package cn.onetap.checkin.platform
 
 import cn.onetap.checkin.core.AdapterException
+import cn.onetap.checkin.core.Rules
 import cn.onetap.checkin.core.Stat
 import cn.onetap.checkin.core.Target
 import cn.onetap.checkin.core.TaskStatus
@@ -152,10 +153,51 @@ class NeteaseVipTest {
             if (expected.isEmpty()) {
                 assertEquals("level,vipLevel,currentLevel,growthPoint,currentGrowthPoint,growPoint,nextLevelGrowthPoint," +
                     "nextGrowthPoint,nextLevelPoint,nextLevelNeedGrowthPoint", result.diagnostic.substringAfter("stats 未识别：字段 "))
-            } else assertFalse(result.diagnostic.contains("stats 未识别"))
+            } else {
+                assertEquals("levelCard,levelCard.growPoint,levelCard.vipLevel",
+                    result.diagnostic.substringAfter("stats 未识别：字段 "))
+            }
             assertEquals(result, adapter.execute("synthetic", target))
             assertEquals(1, calls.count { it.path == growthPath })
         }
+    }
+
+    @Test fun growthStatsUseAnAbsoluteThresholdRemainingPointsOrTheNextLevelEntry() {
+        val cases = listOf(
+            """{"userLevel":{"level":6,"growthPoint":18068,"nextLevelRequiredGrowthPoint":25000}}""",
+            """{"userLevel":{"level":6,"growthPoint":18068,"nextLevelGrowthPoint":100,"remainGrowthPoint":"6932"}}""",
+            """{"userLevel":{"level":6,"growthPoint":18068},"levelList":[{"level":8,"growthPoint":40000},
+                {"level":6,"growthPoint":15000},{"level":"7","growthPoint":25000}]}"""
+        )
+        for (data in cases) {
+            val adapter = fake(listOf(identity, state(true), """{"code":200,"data":$data}"""), mutableListOf())
+            val result = adapter.query("synthetic", target)!!
+            assertEquals(data, listOf(Stat("黑胶等级", "V6"), Stat("成长值", "", 18068, 25000)), result.stats)
+            assertFalse(result.diagnostic.contains("stats 未识别"))
+        }
+    }
+
+    @Test fun missingThresholdReportsOnlySafeFieldNamesAndKeepsTheGrowthValue() {
+        val body = """{"code":200,"data":{"userLevel":{"level":6,"growthPoint":18071,
+            "remainGrowthPoint":9223372036854775807,"extra":[{"item2":"private-value"},{"item2":6932,"more":true}],
+            "bad-key":25000},"another_field":12345,"${"x".repeat(41)}":false}}"""
+        val adapter = fake(listOf(identity, state(true), body), mutableListOf())
+        val result = adapter.query("synthetic", target)!!
+        val note = "stats 未识别：字段 another_field,userLevel,userLevel.extra,userLevel.extra.item2," +
+            "userLevel.extra.more,userLevel.growthPoint,userLevel.level,userLevel.remainGrowthPoint"
+        assertEquals(listOf(Stat("黑胶等级", "V6"), Stat("成长值", "18071")), result.stats)
+        assertEquals("netease vipMusicSign today=true sign=true; $note", result.diagnostic)
+        assertEquals(note, Rules.safeDiagnostic(result.diagnostic))
+    }
+
+    @Test fun missingThresholdCapsTheDiagnosticAtTwentyFields() {
+        val expectedFields = listOf("growthPoint", "level") + (0..17).map { "x%02d".format(it) }
+        val data = JSONObject().put("level", 6).put("growthPoint", 18071)
+        for (index in 0..24) data.put("x%02d".format(index), 12345)
+        val adapter = fake(listOf(identity, state(true), JSONObject().put("code", 200).put("data", data).toString()),
+            mutableListOf())
+        val result = adapter.query("synthetic", target)!!
+        assertEquals("stats 未识别：字段 " + expectedFields.joinToString(","), Rules.safeDiagnostic(result.diagnostic))
     }
 
     @Test fun statReadFailuresPreserveCompletionAndAreCachedUntilTheNextValidation() {

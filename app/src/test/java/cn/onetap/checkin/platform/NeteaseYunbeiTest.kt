@@ -61,7 +61,7 @@ class NeteaseYunbeiTest {
     @Test fun successfulEapiSignAndConfirmedReadIncludeNumericReward() {
         val api=Api(state(false),"""{"code":200,"data":{"point":5}}""",state(true))
         val result=api.adapter.execute(credential,target)
-        assertEquals(TaskStatus.SUCCESS,result.status);assertEquals("云贝签到成功，获得 5 云贝",result.message)
+        assertEquals(TaskStatus.SUCCESS,result.status);assertEquals("签到成功，获得 5 云贝",result.message)
         assertEquals(listOf(Stat("云贝", "42")), result.stats)
         assertEquals(listOf("/nuser/account/get","/point/signed/get","/pointmall/user/sign","/point/signed/get",balancePath),api.calls.map {it.path})
         assertTrue(api.calls.drop(1).dropLast(1).all {it.eapi && it.data.length()==0})
@@ -85,7 +85,7 @@ class NeteaseYunbeiTest {
         val api=Api(state(false),"""{"code":200,"data":{"point":5}}""",state(false),state(false),state(true))
         val result=api.adapter.execute(credential,target)
         assertEquals(TaskStatus.SUCCESS,result.status)
-        assertEquals("云贝签到成功，获得 5 云贝",result.message)
+        assertEquals("签到成功，获得 5 云贝",result.message)
         assertEquals(listOf(1000L,1500L),api.waits)
         assertEquals(1,api.writes.size)
         assertEquals(4,api.calls.count { it.path=="/point/signed/get" })
@@ -133,7 +133,7 @@ class NeteaseYunbeiTest {
             val body=JSONObject().put("code",200).put("data",JSONObject().put(field,3))
             assertTrue(NeteaseAdapter.parseYunbeiSign(body).message.contains("获得 3 云贝"))
         }
-        assertEquals("云贝签到成功",NeteaseAdapter.parseYunbeiSign(JSONObject("""{"code":200,"data":{"point":"fixture-sensitive","sign":true}}""")).message)
+        assertEquals("签到成功",NeteaseAdapter.parseYunbeiSign(JSONObject("""{"code":200,"data":{"point":"fixture-sensitive","sign":true}}""")).message)
     }
 
     @Test fun rejectedOrNonJsonChannelFallsBackOnceButBusinessJsonNeverDoes() {

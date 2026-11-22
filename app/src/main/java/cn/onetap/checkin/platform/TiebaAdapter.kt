@@ -71,18 +71,18 @@ class TiebaAdapter internal constructor(
             TiebaLikeTask.target(session.uid,"none","",false)
         ) else targets.flatMap { forum -> listOf(forum,TiebaLikeTask.target(session.uid,forum.metadata.getValue("forumId"),forum.metadata.getValue("forumName"))) }
         return Identity(session.uid,session.name,tasks,
-            "已校验百度 UID；已分页获取 ${targets.size} 个关注贴吧。每个吧可单独启用每日随机点赞一帖；已赞则此帖最多取消一次再赞。点赞完成后记录任务完成，不额外查询经验到账。")
+            "关注 ${targets.size} 个吧")
     }
 
     override fun requiresFreshCompletionCheck(target: Target): Boolean = target.bound && target.type == "forum"
 
     override fun execute(credential: String, target: Target): TaskResult {
         if (target.type == "daily-like" || target.id.startsWith(TiebaLikeTask.TARGET_PREFIX)) {
-            if (!target.bound) return TaskResult(TaskStatus.UNBOUND, "尚未关注贴吧，无法选择每日点赞帖子")
+            if (!target.bound) return TaskResult(TaskStatus.UNBOUND, "还没有关注的吧")
             val cookies=credentials(credential);val session=login(cookies);checkOwner(session,target)
             return likeTask.execute(session.uid,cookies.getValue("BDUSS"),session.tbs,target,followedForums(cookies,session.uid))
         }
-        if (!target.bound) return TaskResult(TaskStatus.UNBOUND, "尚未关注此贴吧")
+        if (!target.bound) return TaskResult(TaskStatus.UNBOUND, "已取消关注这个吧")
         requireTarget(target)
         val cookies = credentials(credential)
         val session = login(cookies)
@@ -148,11 +148,11 @@ class TiebaAdapter internal constructor(
 
     override fun query(credential: String, target: Target): TaskResult? {
         if (target.type == "daily-like" || target.id.startsWith(TiebaLikeTask.TARGET_PREFIX)) {
-            if (!target.bound) return TaskResult(TaskStatus.UNBOUND,"尚未关注贴吧，无法选择每日点赞帖子")
+            if (!target.bound) return TaskResult(TaskStatus.UNBOUND,"还没有关注的吧")
             val cookies=credentials(credential);val session=login(cookies);checkOwner(session,target)
             return likeTask.query(session.uid,cookies.getValue("BDUSS"),target)
         }
-        if (!target.bound) return TaskResult(TaskStatus.UNBOUND, "尚未关注此贴吧")
+        if (!target.bound) return TaskResult(TaskStatus.UNBOUND, "已取消关注这个吧")
         requireTarget(target)
         val cookies = credentials(credential)
         checkOwner(login(cookies), target)
@@ -230,7 +230,7 @@ class TiebaAdapter internal constructor(
                 webIdentities.put(key, uid)
             }
             if (webUid != target.metadata["ownerUserId"])
-                throw AdapterException(TaskStatus.EXPIRED, "贴吧网页凭证与账号身份不一致，请重新导入同一账号的 Cookie")
+                throw AdapterException(TaskStatus.EXPIRED, "网页登录和账号不一致，请重新登录")
             (if (forceFresh) null else guides.get(key)) ?: run {
                 val response = readRequest(retryReads) {
                     net.postForm("https://tieba.baidu.com/c/f/forum/forumGuide",
@@ -289,7 +289,7 @@ class TiebaAdapter internal constructor(
 
     private fun checkOwner(session: Session, target: Target) {
         if (target.metadata["ownerUserId"] != session.uid)
-            throw AdapterException(TaskStatus.EXPIRED, "凭证对应账号已改变，请重新校验账号并选择贴吧")
+            throw AdapterException(TaskStatus.EXPIRED, "账号已变化，请在账号页刷新")
     }
 
     private fun requireTarget(target: Target) {
@@ -297,7 +297,7 @@ class TiebaAdapter internal constructor(
         val name = target.metadata["forumName"]
         if (target.type != "forum" || id?.toLongOrNull()?.let { it > 0 } != true ||
             target.id != "tieba:forum:$id" || name.isNullOrBlank() || name.any { it.code < 32 })
-            throw AdapterException(TaskStatus.UNKNOWN, "贴吧目标缺失或不一致，请重新校验账号并选择贴吧")
+            throw AdapterException(TaskStatus.UNKNOWN, "贴吧信息已变化，请在账号页刷新")
     }
 
     private fun followedForums(cookies: Map<String, String>, uid: String, forceFresh: Boolean = false): List<Target> {
@@ -322,11 +322,11 @@ class TiebaAdapter internal constructor(
                     throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取关注列表")
                 val array = groups?.optJSONArray(key) ?: continue
                 for (i in 0 until array.length()) {
-                    val forum = array.optJSONObject(i) ?: throw AdapterException(TaskStatus.UNKNOWN, "贴吧列表结构变化，请更新适配器")
+                    val forum = array.optJSONObject(i) ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取关注列表")
                     val id = forum.optString("id")
                     val name = forum.optString("name")
                     if (id.toLongOrNull()?.let { it > 0 } != true || name.isBlank())
-                        throw AdapterException(TaskStatus.UNKNOWN, "贴吧列表缺少明确的吧名或 ID")
+                        throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取关注列表")
                     found++
                     stats[id] = readForumStats(forum)
                     result[id] = Target("tieba:forum:$id", "forum", "${name}吧", metadata = mapOf(
@@ -345,7 +345,7 @@ class TiebaAdapter internal constructor(
                 else -> throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取完整的关注列表")
             }
         }
-        throw AdapterException(TaskStatus.UNKNOWN, "关注贴吧超过本次读取上限，未保存不完整列表")
+        throw AdapterException(TaskStatus.UNKNOWN, "关注的吧太多，暂时读不完")
     }
 
     private fun appRequest(path: String, fields: Map<String, String>): JSONObject =

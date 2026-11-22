@@ -255,8 +255,9 @@ internal fun TargetRow(label: String, targetId: String, status: TaskStatus, reco
                 Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (record != null) {
                     // 说明和右侧状态一样时（比如都是「今日已签到」）就不重复写
-                    if (record.message.isNotBlank() && record.message != pill && record.message != status.title)
-                        Hint(record.message, Modifier.padding(top = 2.dp))
+                    val message = ResultPresentation.message(record)
+                    if (message.isNotBlank() && message != pill && message != status.title)
+                        Hint(message, Modifier.padding(top = 2.dp))
                     val experience = ResultPresentation.experienceState(record)
                     if (experience.isNotBlank()) Hint("经验：$experience")
                 }

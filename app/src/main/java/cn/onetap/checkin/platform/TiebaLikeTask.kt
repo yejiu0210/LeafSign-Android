@@ -31,16 +31,16 @@ internal class TiebaLikeTask(
         val forumId=target.metadata["forumId"].orEmpty();val name=target.metadata["forumName"].orEmpty()
         if (target.id != "$TARGET_PREFIX$forumId" || forumId.toLongOrNull()?.let {it>0}!=true || name.isBlank() || name.any {it.code<32} ||
             target.type != "daily-like" || target.metadata["ownerUserId"] != owner)
-            throw AdapterException(TaskStatus.UNKNOWN, "每日点赞任务身份不一致，请刷新账号")
+            throw AdapterException(TaskStatus.UNKNOWN, "点赞任务已变化，请在账号页刷新")
         val state = store?.read() ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取点赞进度")
         val account = state.accounts.singleOrNull { it.platform == Platform.TIEBA && it.userId == owner }
-            ?: throw AdapterException(TaskStatus.UNKNOWN, "无法确认点赞账号")
+            ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法确认账号")
         return Context(account.id, target, Rules.period(target))
     }
     private fun checkpoint(context: Context): Step? {
         val matches = store!!.read().checkpoints.filter { it.accountId==context.accountId && it.targetId==context.target.id && it.period==context.period }
         if (matches.isEmpty()) return null
-        if (matches.size != 1) throw AdapterException(TaskStatus.UNKNOWN, "点赞进度存在重复记录")
+        if (matches.size != 1) throw AdapterException(TaskStatus.UNKNOWN, "点赞记录异常，请稍后重试")
         val value = matches.single().values
         val threadId = value["threadId"].orEmpty(); val forumId = value["forumId"].orEmpty(); val name=value["forumName"].orEmpty()
         val stage=value["stage"].orEmpty(); val likes=value["likeAttempts"]?.toIntOrNull(); val unlikes=value["unlikeAttempts"]?.toIntOrNull(); val cuid=value["cuid"].orEmpty()
@@ -125,7 +125,7 @@ internal class TiebaLikeTask(
                 step.likes<2 || canRepair(context,step) -> pending()
                 else -> result(TaskStatus.UNKNOWN,"点赞结果未确认")
             }
-            else -> result(TaskStatus.UNKNOWN,"当天点赞状态待确认")
+            else -> result(TaskStatus.UNKNOWN,"点赞结果未确认")
         }
     }
     fun execute(owner: String, bduss: String, tbs: String, target: Target, forums: List<Target>): TaskResult {
@@ -135,7 +135,7 @@ internal class TiebaLikeTask(
         val forum=forums.singleOrNull { it.type=="forum" && it.bound && it.id=="tieba:forum:${target.metadata["forumId"]}" &&
             it.metadata["forumId"]==target.metadata["forumId"] && it.metadata["ownerUserId"]==owner }
             ?: return result(TaskStatus.UNKNOWN,"你已取消关注此吧")
-        if (forum.metadata["forumName"].isNullOrBlank()) return result(TaskStatus.UNKNOWN,"无法确认吧名，请刷新账号")
+        if (forum.metadata["forumName"].isNullOrBlank()) return result(TaskStatus.UNKNOWN,"吧名有变化，请在账号页刷新")
         var step=previous ?: save(context,select(owner,bduss,forum))
         var liked=try { read(owner,bduss,step.post) } catch(e: AdapterException) {
             if(!canReplaceCandidate(step,e)) throw e

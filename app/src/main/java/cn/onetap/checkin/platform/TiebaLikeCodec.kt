@@ -87,7 +87,7 @@ internal object TiebaLikeCodec {
         requireSuccess(body, "读取候选帖子")
         checkUser(body, owner)
         if (positive(body.optJSONObject("forum")?.opt("id")) != forumId)
-            throw AdapterException(TaskStatus.UNKNOWN, "帖子列表与当前账号不匹配")
+            throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取帖子")
         val array = body.optJSONArray("thread_list")
             ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取帖子列表")
         return (0 until array.length()).mapNotNull { index ->
@@ -106,10 +106,10 @@ internal object TiebaLikeCodec {
         checkUser(body, owner)
         val thread = body.optJSONObject("thread")
         if (positive(thread?.opt("id")) != post.threadId)
-            identityFailure("thread_id",post.threadId,thread?.opt("id"),"帖子详情与所选帖子不匹配")
+            identityFailure("thread_id",post.threadId,thread?.opt("id"),"帖子有变化，请稍后重试")
         val forumId=body.optJSONObject("forum")?.opt("id")
         if (positive(forumId) != post.forumId)
-            identityFailure("forum_id",post.forumId,forumId,"帖子详情与所选贴吧不匹配")
+            identityFailure("forum_id",post.forumId,forumId,"帖子有变化，请稍后重试")
         if(thread?.has("fid")==true) {
             val redundant=thread.opt("fid")
             // ThreadInfo's optional proto3 scalar fid defaults to zero. The detail's

@@ -40,7 +40,7 @@ class RunnerRulesTest {
         val adapter=FakeAdapter().apply {validateAction={Identity("wrong","wrong",emptyList())}}
         val store=MemoryStore(AppState(accounts=listOf(account("main"))))
         Runner(store,mapOf(Platform.SKLAND to adapter)).run();assertEquals(0,adapter.writes)
-        assertTrue(store.value.records.all {it.status==TaskStatus.INTERRUPTED && it.message.contains("账号身份校验") && it.message.contains("登录失效，请先更新凭证")})
+        assertTrue(store.value.records.all {it.status==TaskStatus.INTERRUPTED && it.message.contains("账号身份校验") && it.message.contains("重新登录")})
     }
     @Test fun refreshedSessionIsSavedAndRereadAfterQueryAndForNextTarget()=runBlocking {
         val a=account("main");val store=MemoryStore(AppState(accounts=listOf(a)))
@@ -89,7 +89,7 @@ class RunnerRulesTest {
         val store=MemoryStore(AppState(accounts=listOf(account("main"))));Runner(store,mapOf(Platform.SKLAND to adapter)).run()
         assertEquals(1,adapter.writes)
         assertEquals(1,store.value.records.count{it.status==TaskStatus.EXPIRED})
-        assertEquals(1,store.value.records.count{it.status==TaskStatus.INTERRUPTED && it.message.contains("登录失效，请先更新凭证")})
+        assertEquals(1,store.value.records.count{it.status==TaskStatus.INTERRUPTED && it.message.contains("重新登录")})
     }
     @Test fun completedTasksAreSkippedAndUnknownIsRetriable()=runBlocking {
         val adapter=FakeAdapter();val store=MemoryStore(AppState(accounts=listOf(account("main"))));val runner=Runner(store,mapOf(Platform.SKLAND to adapter))
@@ -186,7 +186,7 @@ class RunnerRulesTest {
         assertEquals(TaskStatus.MANUAL,trigger.status);assertEquals("已停止点赞",trigger.message)
         val skipped=store.value.records.single { it.targetId=="like-b" }
         assertEquals(TaskStatus.INTERRUPTED,skipped.status)
-        assertEquals("未执行：同账号的「A吧点赞」触发了平台验证，为避免加重风控已暂停；处理后点「仅重试失败 / 待确认项」补签",skipped.message)
+        assertEquals("已暂停：「A吧点赞」需要先验证，处理好后点「仅重试失败项」",skipped.message)
         assertEquals("",skipped.diagnostic)
         adapter.action={_,t->writes+=t.id;TaskResult(TaskStatus.SUCCESS,"fixture")}
         assertEquals(1,runner.run(true))

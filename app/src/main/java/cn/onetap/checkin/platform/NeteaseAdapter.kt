@@ -2,6 +2,7 @@ package cn.onetap.checkin.platform
 
 import cn.onetap.checkin.core.*
 import cn.onetap.checkin.core.Target
+import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONException
 import okhttp3.FormBody
@@ -55,7 +56,7 @@ class NeteaseAdapter internal constructor(
                 "resetVerified" to "false", "resetEvidence" to "每日业务；精确边界待真实账号跨日确认"
             )), Target(YUNBEI_ID, YUNBEI_TYPE, "云贝签到", metadata = mapOf(
                 "ownerUserId" to uid, "resetZone" to "Asia/Shanghai", "resetHour" to "0", "defaultEnabled" to "true"
-            ))), "已校验网易云 UID；执行黑胶乐签与云贝签到，不执行播放、领奖或购买")
+            ))), "")
     }
 
     override fun execute(credential: String, target: Target): TaskResult {
@@ -65,7 +66,7 @@ class NeteaseAdapter internal constructor(
         val cookie = credentials(credential)
         val identity = validateAccount(cookie)
         if (target.metadata["ownerUserId"] != identity.userId)
-            return TaskResult(TaskStatus.EXPIRED, "凭证对应账号已改变，请重新校验账号并选择任务")
+            return TaskResult(TaskStatus.EXPIRED, "账号已变化，请在账号页刷新")
         val before = readVipState(cookie)
         if (before.status != TaskStatus.PENDING) return withVipStats(before, cookie, identity.userId)
 
@@ -97,18 +98,18 @@ class NeteaseAdapter internal constructor(
 
     override fun query(credential: String, target: Target): TaskResult? {
         if (isYunbeiTarget(target)) {
-            if (!target.bound) return TaskResult(TaskStatus.UNBOUND,"云贝任务未绑定")
+            if (!target.bound) return TaskResult(TaskStatus.UNBOUND,"云贝签到不可用，请在账号页刷新")
             val cookie = credentials(credential)
             val identity = validateAccount(cookie)
             if (identity.userId != target.metadata["ownerUserId"])
-                return TaskResult(TaskStatus.EXPIRED,"凭证对应账号已改变，请重新校验账号并选择任务")
+                return TaskResult(TaskStatus.EXPIRED,"账号已变化，请在账号页刷新")
             return readYunbeiState(cookie)?.let { withYunbeiStats(it, cookie, identity.userId) }
         }
         if (!isVipTarget(target)) return TaskResult(TaskStatus.UNKNOWN, "不支持此签到任务")
         val cookie = credentials(credential)
         val identity = validateAccount(cookie)
         if (target.metadata["ownerUserId"] != identity.userId)
-            return TaskResult(TaskStatus.EXPIRED, "凭证对应账号已改变，请重新校验账号并选择任务")
+            return TaskResult(TaskStatus.EXPIRED, "账号已变化，请在账号页刷新")
         return withVipStats(readVipState(cookie), cookie, identity.userId)
     }
 
@@ -116,11 +117,11 @@ class NeteaseAdapter internal constructor(
         "/vipnewcenter/app/minidesk/music/sign/pc", JSONObject().put("type", 1), cookie, true))
 
     private fun executeYunbei(credential: String, target: Target): TaskResult {
-        if (!target.bound) return TaskResult(TaskStatus.UNBOUND,"云贝任务未绑定")
+        if (!target.bound) return TaskResult(TaskStatus.UNBOUND,"云贝签到不可用，请在账号页刷新")
         val cookie = credentials(credential)
         val identity = validateAccount(cookie)
         if (identity.userId != target.metadata["ownerUserId"])
-            return TaskResult(TaskStatus.EXPIRED,"凭证对应账号已改变，请重新校验账号并选择任务")
+            return TaskResult(TaskStatus.EXPIRED,"账号已变化，请在账号页刷新")
         val before = readYunbeiState(cookie)
         if (before != null && before.status != TaskStatus.PENDING)
             return withYunbeiStats(before, cookie, identity.userId)
@@ -171,15 +172,68 @@ class NeteaseAdapter internal constructor(
 
         val levelFields = listOf("level", "vipLevel", "currentLevel")
         val growthFields = listOf("growthPoint", "currentGrowthPoint", "growPoint")
-        val nextFields = listOf("nextLevelGrowthPoint", "nextGrowthPoint", "nextLevelPoint", "nextLevelNeedGrowthPoint")
         val level = firstNumber(levelFields)
         val growth = firstNumber(growthFields)
-        val next = firstNumber(nextFields)
+        val next = growth?.let { findVipThreshold(sources, level, it) }
         val stats = listOfNotNull(
             level?.let { Stat("黑胶等级", "V$it") },
             growth?.let { progressStat("成长值", it, next) ?: Stat("成长值", it.toString()) }
         )
-        return StatsRead(stats, if (stats.isEmpty()) levelFields + growthFields + nextFields else emptyList())
+        val unrecognized = when {
+            stats.isEmpty() -> levelFields + growthFields + legacyVipThresholdFields
+            level != null && growth != null && next == null -> vipDiagnosticFields(data)
+            else -> emptyList()
+        }
+        return StatsRead(stats, unrecognized)
+    }
+
+    private fun findVipThreshold(sources: List<JSONObject>, level: Long?, growth: Long): Long? {
+        fun threshold(points: Long?) = points?.takeIf { it > 0 && it >= growth }
+
+        sources.firstNotNullOfOrNull { source ->
+            vipThresholdFields.firstNotNullOfOrNull { threshold(source.statLong(it)) }
+        }?.let { return it }
+
+        sources.firstNotNullOfOrNull { source ->
+            vipRemainingFields.firstNotNullOfOrNull { field ->
+                val remaining = source.statLong(field)?.takeIf { it <= Long.MAX_VALUE - growth }
+                threshold(remaining?.let { growth + it })
+            }
+        }?.let { return it }
+
+        val nextLevel = level?.takeIf { it < Long.MAX_VALUE }?.plus(1) ?: return null
+        return sources.firstNotNullOfOrNull { source ->
+            vipLevelListFields.firstNotNullOfOrNull { field ->
+                source.optJSONArray(field)?.let { levels ->
+                    (0 until levels.length()).firstNotNullOfOrNull { index ->
+                        val entry = levels.optJSONObject(index)
+                        val entryLevel = entry?.statLong("level") ?: entry?.statLong("vipLevel")
+                        threshold(entry?.takeIf { entryLevel == nextLevel }?.statLong("growthPoint"))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun vipDiagnosticFields(data: JSONObject?): List<String> {
+        val fields = linkedSetOf<String>()
+        fun collect(value: Any?, prefix: String) {
+            when (value) {
+                is JSONObject -> for (key in value.keys().asSequence().sorted()) {
+                    if (fields.size == 20) break
+                    val path = if (prefix.isEmpty()) key else "$prefix.$key"
+                    if (!vipDiagnosticField.matches(key) || path.length > 40) continue
+                    fields.add(path)
+                    collect(value.opt(key), path)
+                }
+                is JSONArray -> for (index in 0 until value.length()) {
+                    if (fields.size == 20) break
+                    collect(value.opt(index), prefix)
+                }
+            }
+        }
+        collect(data, "")
+        return fields.toList()
     }
 
     private fun parseYunbeiStats(response: JSONObject): StatsRead {
@@ -272,7 +326,7 @@ class NeteaseAdapter internal constructor(
             if (p.size == 2 && p[0] in setOf("MUSIC_U", "__csrf")) p[0] to p[1] else null
         }.toMap() else if (!raw.contains(';') && !raw.contains(' ')) mapOf("MUSIC_U" to raw) else emptyMap()
         if (cookies["MUSIC_U"].isNullOrBlank() || cookies.values.any { it.any { c -> c.code < 33 || c.code > 126 || c == ';' } })
-            throw AdapterException(TaskStatus.EXPIRED, "Cookie 中缺少有效 MUSIC_U，请从已登录的官网重新复制")
+            throw AdapterException(TaskStatus.EXPIRED, "Cookie 里没有 MUSIC_U，请重新复制")
         return cookies
     }
 
@@ -296,6 +350,15 @@ class NeteaseAdapter internal constructor(
         const val TARGET_TYPE = "vip-music-sign"
         const val YUNBEI_ID = "netease:yunbei"
         const val YUNBEI_TYPE = "yunbei"
+        private val legacyVipThresholdFields =
+            listOf("nextLevelGrowthPoint", "nextGrowthPoint", "nextLevelPoint", "nextLevelNeedGrowthPoint")
+        private val vipThresholdFields = legacyVipThresholdFields + listOf("nextLevelRequiredGrowthPoint",
+            "requiredGrowthPointForNextLevel", "nextLevelGrowPoint", "nextGrowPoint", "nextLevelGrowthThreshold")
+        private val vipRemainingFields = listOf("remainGrowthPoint", "remainingGrowthPoint", "growthPointRemaining",
+            "growthPointToNextLevel", "nextLevelRemainGrowthPoint", "nextLevelRemainingGrowthPoint",
+            "nextLevelGrowthPointDiff", "growthPointDiff")
+        private val vipLevelListFields = listOf("levelList", "vipLevelList", "userLevelList", "growthLevelList")
+        private val vipDiagnosticField = Regex("[A-Za-z0-9_.]+")
         private fun isYunbeiTarget(target: Target) = target.id == YUNBEI_ID && target.type == YUNBEI_TYPE
         private fun isVipTarget(target: Target) = target.id == TARGET_ID && target.type == TARGET_TYPE
 
@@ -310,8 +373,8 @@ class NeteaseAdapter internal constructor(
                 listOf("signed","sign","isSign","todaySigned").mapNotNull { data.opt(it) as? Boolean }
             }.distinct()
             if (values.size != 1) return null
-            return if (values.single()) TaskResult(TaskStatus.ALREADY,"今日云贝已签到","code=200")
-                else TaskResult(TaskStatus.PENDING,"今日云贝尚未签到","code=200")
+            return if (values.single()) TaskResult(TaskStatus.ALREADY,"今日已签到","code=200")
+                else TaskResult(TaskStatus.PENDING,"今日尚未签到","code=200")
         }
 
         internal fun parseYunbeiSign(result: JSONObject): TaskResult {
@@ -322,10 +385,10 @@ class NeteaseAdapter internal constructor(
             if (code == 200) {
                 val data = result.optJSONObject("data")
                 val amount = listOf("point","yunbei","score","sign").firstNotNullOfOrNull { numericValue(data?.opt(it)) }
-                return TaskResult(TaskStatus.SUCCESS,"云贝签到成功" + (amount?.let { "，获得 $it 云贝" } ?: ""),diagnostic)
+                return TaskResult(TaskStatus.SUCCESS,"签到成功" + (amount?.let { "，获得 $it 云贝" } ?: ""),diagnostic)
             }
             if (code == -2 || message.contains("已签到") || message.contains("重复"))
-                return TaskResult(TaskStatus.ALREADY,"今日云贝已签到",diagnostic)
+                return TaskResult(TaskStatus.ALREADY,"今日已签到",diagnostic)
             if (yunbeiManual(result)) return TaskResult(TaskStatus.MANUAL,"需要在网易云 App 完成验证",diagnostic)
             return TaskResult(TaskStatus.UNKNOWN,"结果未确认，请稍后重试",diagnostic)
         }

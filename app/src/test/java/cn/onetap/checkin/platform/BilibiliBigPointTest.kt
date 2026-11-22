@@ -63,7 +63,7 @@ class BilibiliBigPointTest {
         val api=Api(state(false),"""{"code":0,"data":{"score":5,"count":2,"duration":3}}""",state(true))
         val result=api.adapter.execute(credential,target)
         assertEquals(TaskStatus.SUCCESS,result.status)
-        assertEquals("大积分签到成功，获得 5 积分，连续签到 2/3 天",result.message)
+        assertEquals("签到成功，获得 5 积分，连续签到 2/3 天",result.message)
         assertEquals(listOf(Stat("大积分", "42")), result.stats)
         val write=api.writes.single();val url=write.url.toHttpUrl()
         assertEquals("/pgc/activity/score/task/sign2",url.encodedPath)
@@ -95,7 +95,7 @@ class BilibiliBigPointTest {
             assertEquals(result.diagnostic,Rules.safeDiagnostic(result.diagnostic))
         }
         val result=BilibiliAdapter.parseBigPointSign(JSONObject("""{"code":0,"data":{"score":"fixture-sensitive","count":"fixture-csrf"}}"""))
-        assertEquals("大积分签到成功",result.message)
+        assertEquals("签到成功",result.message)
     }
 
     @Test fun alreadySignedNonVipAndWrongIdentityDoNotWrite() {

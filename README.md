@@ -28,7 +28,7 @@ Kotlin / Jetpack Compose，Android 8.0（API 26）以上。
 
 | 当前版本 | 下载 | 验证状态 |
 | --- | --- | --- |
-| **0.5.9**（versionCode 19） | [Releases](https://github.com/yejiu0210/one-tap-checkin-android/releases)（私有仓库，需有权限的账号登录） | 单元测试 373 项通过、Lint 无错误（2026-11-22）。本人真机已确认：零点定时签到配合失败自动重试可以正常完成、小黑盒扫码登录成功。0.4.5 及之前的验证见 [verification.md](docs/verification.md) |
+| **0.5.10**（versionCode 20） | [Releases](https://github.com/yejiu0210/one-tap-checkin-android/releases)（私有仓库，需有权限的账号登录） | 单元测试 376 项通过、Lint 无错误（2026-11-22）。本人真机已确认：零点定时签到配合失败自动重试可以正常完成、小黑盒扫码登录成功。0.4.5 及之前的验证见 [verification.md](docs/verification.md) |
 
 ## 支持平台
 

@@ -82,7 +82,7 @@ private fun RecordCard(r: Record) {
                 }
                 Text(r.task, style = MaterialTheme.typography.bodyMedium)
                 StatusPill(r.status, Modifier.padding(vertical = 2.dp), r.targetId)
-                if (r.message.isNotBlank()) Hint(r.message)
+                ResultPresentation.message(r).let { if (it.isNotBlank()) Hint(it) }
                 val experience = ResultPresentation.experienceState(r)
                 if (experience.isNotBlank()) Hint("经验：$experience")
                 if (r.diagnostic.isNotBlank()) Hint("诊断：${r.diagnostic}")
