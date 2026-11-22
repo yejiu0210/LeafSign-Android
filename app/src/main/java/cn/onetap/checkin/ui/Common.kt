@@ -1,6 +1,13 @@
 package cn.onetap.checkin.ui
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -116,12 +123,59 @@ internal fun platformColor(p: Platform): Color = platformStyle(p).let { if (Loca
 @Composable
 internal fun PlatformBadge(p: Platform, size: Dp = 40.dp) {
     val color = platformColor(p)
+    val icon = rememberPlatformAppIcon(p)
     Box(
-        Modifier.size(size).clip(RoundedCornerShape(size * 0.32f)).background(color.copy(alpha = 0.15f)),
+        Modifier.size(size).clip(RoundedCornerShape(size * 0.32f))
+            .then(if (icon == null) Modifier.background(color.copy(alpha = 0.15f)) else Modifier),
         contentAlignment = Alignment.Center
     ) {
-        Text(platformStyle(p).mark, color = color, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.42f).sp)
+        if (icon != null) Image(icon, contentDescription = p.title, modifier = Modifier.fillMaxSize())
+        else Text(platformStyle(p).mark, color = color, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.42f).sp)
     }
+}
+
+/**
+ * 用作平台图标的官方 App 包名，按优先级排列。只列同品牌的 App：
+ * 比如森空岛不用明日方舟的图标，贴吧不用百度 App 的图标，免得显示成别的 App。
+ */
+private fun iconPackages(p: Platform): List<String> = when (p) {
+    Platform.BILIBILI -> listOf("tv.danmaku.bili", "com.bilibili.app.blue", "tv.danmaku.bilibilihd")
+    Platform.NETEASE -> listOf("com.netease.cloudmusic")
+    Platform.TIEBA -> listOf("com.baidu.tieba")
+    Platform.SKLAND -> listOf("com.hypergryph.skland")
+    Platform.HEYBOX -> listOf("com.max.xiaoheihe")
+}
+
+/** 已读取过的图标（没装的平台记为 null），整个进程共用，避免每次重组都去读安装包。 */
+private val appIconCache = java.util.concurrent.ConcurrentHashMap<Platform, java.util.Optional<ImageBitmap>>()
+
+/** 读取手机上已安装的官方 App 图标；没装或读取失败时返回 null，界面退回文字徽章。 */
+@Composable
+private fun rememberPlatformAppIcon(p: Platform): ImageBitmap? {
+    val context = LocalContext.current.applicationContext
+    val icon by produceState(appIconCache[p]?.orElse(null), p) {
+        if (appIconCache.containsKey(p)) return@produceState
+        val loaded = withContext(Dispatchers.IO) { loadAppIcon(context, p) }
+        appIconCache[p] = java.util.Optional.ofNullable(loaded)
+        value = loaded
+    }
+    return icon
+}
+
+private fun loadAppIcon(context: android.content.Context, p: Platform): ImageBitmap? {
+    val pm = context.packageManager
+    for (pkg in iconPackages(p)) {
+        val drawable = try { pm.getApplicationIcon(pkg) } catch (_: Exception) { continue }
+        return try {
+            // 自适应图标没有固定尺寸，统一画到 144×144 的位图上，各处显示都够清晰
+            val px = 144
+            val bitmap = android.graphics.Bitmap.createBitmap(px, px, android.graphics.Bitmap.Config.ARGB_8888)
+            drawable.setBounds(0, 0, px, px)
+            drawable.draw(android.graphics.Canvas(bitmap))
+            bitmap.asImageBitmap()
+        } catch (_: Exception) { null }
+    }
+    return null
 }
 
 /** 首页环形进度，带缓动。 */
