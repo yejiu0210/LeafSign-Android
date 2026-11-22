@@ -201,7 +201,8 @@ internal fun QrLoginDialog(platform: Platform, onCredential: (String) -> Unit, o
 
                 if (ready != null && ready.poll !is QrPoll.Confirmed) {
                     if (apps.isEmpty()) {
-                        Hint("没有检测到可扫码的官方 App（${officialApps(platform).joinToString("、") { it.name }}）。可以用另一台手机扫码，或改用下方网页登录。", Modifier.fillMaxWidth())
+                        Hint("没有检测到可扫码的官方 App（${officialApps(platform).joinToString("、") { it.name }}）。可以用另一台手机扫码，" +
+                            (if (platform == Platform.HEYBOX) "或保存二维码后在 App 里从相册扫码。" else "或改用下方网页登录。"), Modifier.fillMaxWidth())
                     }
                     apps.forEach { app ->
                         Button(onClick = {

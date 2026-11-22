@@ -14,6 +14,7 @@ data class QrTicket(
     internal var lastStatusCode: Int? = null
     // Access only while holding synchronized(ticket); never shared with another QR login session.
     internal val sessionCookies: MutableMap<String, String> = linkedMapOf()
+    internal val observedCookieNames: MutableSet<String> = linkedSetOf()
     override fun toString() = "QrTicket(platform=$platform, expiresAt=$expiresAt, content=<redacted>, state=<redacted>)"
 }
 

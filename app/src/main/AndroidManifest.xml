@@ -23,6 +23,7 @@
         <package android:name="com.baidu.netdisk" />
         <package android:name="com.hypergryph.skland" />
         <package android:name="com.hypergryph.arknights" />
+        <package android:name="com.max.xiaoheihe" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="hypergryph" />

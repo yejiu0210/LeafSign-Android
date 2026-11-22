@@ -9,7 +9,6 @@ import cn.onetap.checkin.core.PlatformAdapter
 import cn.onetap.checkin.core.Target
 import cn.onetap.checkin.core.TaskResult
 import cn.onetap.checkin.core.TaskStatus
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONObject
 import java.io.IOException
 
@@ -17,7 +16,7 @@ class HeyboxAdapter internal constructor(
     private val exchange: ((String, Map<String, String>, Map<String, String>) -> JSONObject)? = null
 ) : PlatformAdapter {
     override val platform = Platform.HEYBOX
-    private val net = NetClient(setOf("api.xiaoheihe.cn"))
+    private val net = NetClient(setOf(HeyboxWebRequest.HOST))
 
     override fun validate(credential: String): Identity {
         val cookies = credentials(credential)
@@ -89,21 +88,10 @@ class HeyboxAdapter internal constructor(
     }
 
     private fun request(path: String, cookies: Map<String, String>): JSONObject {
-        val params = linkedMapOf(
-            "app" to (if (path == IDENTITY_PATH) "web" else "heybox"), "os_type" to "web", "x_app" to "heybox_website",
-            "x_client_type" to "web", "client_type" to "web", "x_os_type" to "Android",
-            "web_version" to "3.0", "heybox_id" to cookies.getValue("heybox_id")
-        )
-        if (path != IDENTITY_PATH) params.putAll(HeyboxWebSigning.parameters(path))
+        val params = HeyboxWebRequest.parameters(path) + ("heybox_id" to cookies.getValue("heybox_id"))
         try {
             exchange?.let { return it(path, params, cookies) }
-            val url = "https://api.xiaoheihe.cn$path".toHttpUrl().newBuilder()
-                .apply { params.forEach { (key, value) -> addQueryParameter(key, value) } }.build()
-            return net.get(url.toString(), mapOf(
-                "Cookie" to cookieHeader(cookies),
-                "Referer" to "https://www.xiaoheihe.cn/",
-                "User-Agent" to "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/124.0.0.0 Mobile Safari/537.36"
-            ))
+            return net.get(HeyboxWebRequest.url(path, params), HeyboxWebRequest.headers + ("Cookie" to cookieHeader(cookies)))
         } catch (error: HttpStatusException) {
             if (error.status == TaskStatus.EXPIRED)
                 throw HttpStatusException(error.code, error.status, EXPIRED_MESSAGE, error.diagnostic)

@@ -66,7 +66,7 @@ class HeyboxAdapterTest {
             assertEquals(HeyboxAdapter.IDENTITY_PATH, path)
             assertEquals("web", params["app"])
             assertEquals("web", params["os_type"])
-            assertTrue(params.keys.intersect(setOf("pkey", "user_pkey", "hkey", "nonce", "imei", "device_info")).isEmpty())
+            assertTrue(params.keys.intersect(setOf("pkey", "user_pkey", "imei")).isEmpty())
             assertEquals(HeyboxAdapter.COOKIE_NAMES, cookies.keys)
             assertEquals(imported, cookies["pkey"])
             assertEquals(imported, cookies["user_pkey"])
@@ -118,13 +118,19 @@ class HeyboxAdapterTest {
             assertEquals(serverPkey, cookies["pkey"])
             assertEquals(serverPkey, cookies["user_pkey"])
             assertEquals("123", params["heybox_id"])
+            assertEquals("web", params["app"])
+            assertEquals("2.5", params["web_version"])
+            assertEquals("999.0.4", params["version"])
+            assertEquals("Windows", params["x_os_type"])
+            assertEquals("Chrome", params["device_info"])
+            assertEquals("", params["device_id"])
+            assertEquals(HeyboxWebSigning.sign(path, params.getValue("_time").toLong(), params.getValue("nonce")), params["hkey"])
             if (path == HeyboxAdapter.IDENTITY_PATH) {
                 serverPkey = "fixture-rotated-${++rotations}"
                 identity(serverPkey)
             } else {
                 // Check persistence inside the first task request, before it can use the new session.
                 assertTrue(store.read().accounts.single().credential.contains("pkey=$serverPkey;"))
-                assertNotNull(params["hkey"])
                 when (path) {
                     HeyboxAdapter.TASK_PATH -> task(if (signed) "finish" else "todo")
                     HeyboxAdapter.SIGN_PATH -> { signed = true; write("success") }
