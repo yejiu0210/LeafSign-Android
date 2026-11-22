@@ -231,9 +231,11 @@ private fun AccountBlock(a: Account, state: AppState, clockTick: Long, open: Boo
                 color = if (rows.isNotEmpty() && done == rows.size) Color(LocalThemePalette.current.success) else MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (rows.isEmpty()) Hint(if (a.credential.isBlank()) "请到账号页更新凭证" else "未启用任何任务，可在账号页勾选")
-        val shown = if (open || rows.size <= COLLAPSED_ROWS + 1) rows else rows.take(COLLAPSED_ROWS)
+        // 贴吧吧多，首页只放汇总，各吧详情进二级页面看
+        if (a.platform == Platform.TIEBA && rows.isNotEmpty()) TiebaSummary(a, rows)
+        val shown = if (a.platform == Platform.TIEBA) emptyList() else if (open || rows.size <= COLLAPSED_ROWS + 1) rows else rows.take(COLLAPSED_ROWS)
         shown.forEach { (t, status, record) -> TargetRow(targetLabel(t), t.id, status, record) }
-        if (rows.size > COLLAPSED_ROWS + 1) {
+        if (a.platform != Platform.TIEBA && rows.size > COLLAPSED_ROWS + 1) {
             Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { onToggle(!open) }.padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                 Text(if (open) "收起" else "展开全部 ${rows.size} 项", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -245,16 +247,22 @@ private fun AccountBlock(a: Account, state: AppState, clockTick: Long, open: Boo
 }
 
 @Composable
-private fun TargetRow(label: String, targetId: String, status: TaskStatus, record: Record?) {
-    Row(verticalAlignment = Alignment.Top) {
-        Column(Modifier.weight(1f).padding(end = 10.dp)) {
-            Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (record != null) {
-                Hint(record.message, Modifier.padding(top = 2.dp))
-                val experience = ResultPresentation.experienceState(record)
-                if (experience.isNotBlank()) Hint("经验：$experience")
+internal fun TargetRow(label: String, targetId: String, status: TaskStatus, record: Record?) {
+    val pill = Rules.resultTitle(status, targetId)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f).padding(end = 10.dp)) {
+                Text(label, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (record != null) {
+                    // 说明和右侧状态一样时（比如都是「今日已签到」）就不重复写
+                    if (record.message.isNotBlank() && record.message != pill && record.message != status.title)
+                        Hint(record.message, Modifier.padding(top = 2.dp))
+                    val experience = ResultPresentation.experienceState(record)
+                    if (experience.isNotBlank()) Hint("经验：$experience")
+                }
             }
+            StatusPill(status, targetId = targetId)
         }
-        StatusPill(status, targetId = targetId)
+        if (record != null) StatsView(record.stats)
     }
 }

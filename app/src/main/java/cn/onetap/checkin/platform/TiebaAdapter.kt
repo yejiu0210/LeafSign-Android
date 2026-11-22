@@ -43,7 +43,17 @@ class TiebaAdapter internal constructor(
     }
     private val sessions = ReadCache<Session>(300_000)
     private val webIdentities = ReadCache<String>(300_000)
+    private data class ForumStats(val level: Long?, val name: String?, val score: Long?, val nextScore: Long?,
+        val streak: Long?) {
+        fun display(): List<Stat> = listOfNotNull(
+            level?.let { Stat("等级", listOfNotNull("Lv.$it", name).joinToString(" ")) },
+            progressStat("经验", score, nextScore),
+            streak?.let { Stat("连签", "$it 天") }
+        )
+    }
     private val followed = ReadCache<List<Target>>(300_000)
+    // Keep the run's stats available even when a large, paced set of writes outlives the target cache.
+    private val forumStats = ConcurrentHashMap<String, ConcurrentHashMap<String, ForumStats>>()
     private val guides = ReadCache<Map<String, String>>(20_000)
     // Cache keys contain only digests. STOKEN changes must invalidate independent web ownership checks.
     private fun cacheKey(cookies: Map<String, String>, web: Boolean = false): String =
@@ -78,7 +88,7 @@ class TiebaAdapter internal constructor(
         val session = login(cookies)
         checkOwner(session, target)
         val state = querySigned(cookies, target)
-        if (state?.status == TaskStatus.ALREADY) return state
+        if (state?.status == TaskStatus.ALREADY) return withForumStats(state, cookies, target)
         return signAndCheck(cookies, session, target)
     }
 
@@ -88,9 +98,12 @@ class TiebaAdapter internal constructor(
         // Even a timed-out write may have reached the server. Reconciliation must not use old PENDING.
         invalidateWeb(cookies)
         var writeFailure: String? = null
+        var signInfo: JSONObject? = null
         val acknowledgement = try {
-            parseSignResult(appRequest("/c/c/forum/sign", mapOf("BDUSS" to cookies.getValue("BDUSS"),
-                "_client_version" to VERSION, "kw" to target.metadata.getValue("forumName"), "tbs" to session.tbs)))
+            val response = appRequest("/c/c/forum/sign", mapOf("BDUSS" to cookies.getValue("BDUSS"),
+                "_client_version" to VERSION, "kw" to target.metadata.getValue("forumName"), "tbs" to session.tbs))
+            if (errorCode(response) in setOf(0, 160002)) signInfo = response.optJSONObject("user_info")
+            parseSignResult(response)
         } catch (e: Exception) {
             if (!isTransient(e)) throw e
             val diagnostic = transportDiagnostic(e)
@@ -102,8 +115,8 @@ class TiebaAdapter internal constructor(
         val diagnostic = writeFailure ?: previousFailure
         if (checked?.status == TaskStatus.ALREADY) {
             val status = if (acknowledgement.status == TaskStatus.SUCCESS) TaskStatus.SUCCESS else TaskStatus.ALREADY
-            return TaskResult(status, if (status == TaskStatus.SUCCESS) "签到成功" else "今日已签到",
-                diagnostic ?: checked.diagnostic)
+            return withForumStats(TaskResult(status, if (status == TaskStatus.SUCCESS) acknowledgement.message else "今日已签到",
+                diagnostic ?: checked.diagnostic), cookies, target, signInfo)
         }
         if (writeFailure != null && previousFailure == null && checked?.status == TaskStatus.PENDING)
             return signAndCheck(cookies, session, target, previousFailure = writeFailure)
@@ -143,7 +156,36 @@ class TiebaAdapter internal constructor(
         requireTarget(target)
         val cookies = credentials(credential)
         checkOwner(login(cookies), target)
-        return querySigned(cookies, target)
+        val result = querySigned(cookies, target) ?: return null
+        return if (result.status == TaskStatus.ALREADY) withForumStats(result, cookies, target) else result
+    }
+
+    private fun withForumStats(result: TaskResult, cookies: Map<String, String>, target: Target,
+        signInfo: JSONObject? = null): TaskResult {
+        val forumId = target.metadata.getValue("forumId")
+        val key = cacheKey(cookies)
+        val stats = if (signInfo == null) forumStats[key]?.get(forumId) else {
+            forumStats.computeIfAbsent(key) { ConcurrentHashMap() }.compute(forumId) { _, previous ->
+                readForumStats(signInfo, previous)
+            }
+        }
+        val display = stats?.display().orEmpty()
+        return if (display.isEmpty() && (stats != null || signInfo != null))
+            result.withUnrecognizedStats(listOf("level_id", "level_name", "cur_score", "levelup_score", "cont_sign_num"))
+        else result.copy(stats = display)
+    }
+
+    private fun readForumStats(data: JSONObject, previous: ForumStats? = null): ForumStats {
+        val name = (data.opt("level_name") as? String)?.trim()?.takeIf { it.isNotEmpty() }
+        val level = data.statLong("level_id")?.takeIf { it > 0 }
+        val nextScore = when (data.opt("levelup_score")) {
+            "--" -> null
+            else -> data.statLong("levelup_score") ?: previous?.nextScore
+        }
+        return ForumStats(level ?: previous?.level,
+            name ?: previous?.name?.takeIf { level == null || level == previous.level },
+            data.statLong("cur_score") ?: previous?.score,
+            nextScore, data.statLong("cont_sign_num") ?: previous?.streak)
     }
 
     internal fun paceWrites(uid: String) {
@@ -260,8 +302,12 @@ class TiebaAdapter internal constructor(
 
     private fun followedForums(cookies: Map<String, String>, uid: String, forceFresh: Boolean = false): List<Target> {
         val key = cacheKey(cookies)
-        if (forceFresh) followed.remove(key) else followed.get(key)?.let { return it }
+        if (forceFresh) {
+            followed.remove(key)
+            forumStats.remove(key)
+        } else followed.get(key)?.let { return it }
         val result = linkedMapOf<String, Target>()
+        val stats = ConcurrentHashMap<String, ForumStats>()
         for (page in 1..100) {
             val response = readAppRequest("/c/f/forum/like", mapOf("BDUSS" to cookies.getValue("BDUSS"),
                 "_client_version" to VERSION, "friend_uid" to uid, "page_no" to "$page", "page_size" to "200"))
@@ -282,6 +328,7 @@ class TiebaAdapter internal constructor(
                     if (id.toLongOrNull()?.let { it > 0 } != true || name.isBlank())
                         throw AdapterException(TaskStatus.UNKNOWN, "贴吧列表缺少明确的吧名或 ID")
                     found++
+                    stats[id] = readForumStats(forum)
                     result[id] = Target("tieba:forum:$id", "forum", "${name}吧", metadata = mapOf(
                         "ownerUserId" to uid, "forumId" to id, "forumName" to name,
                         "resetZone" to "Asia/Shanghai", "resetHour" to "0", "resetVerified" to "false",
@@ -290,7 +337,10 @@ class TiebaAdapter internal constructor(
                 }
             }
             when (response.opt("has_more")?.toString()) {
-                "0", "false" -> return followed.put(key, result.values.toList())
+                "0", "false" -> {
+                    forumStats[key] = stats
+                    return followed.put(key, result.values.toList())
+                }
                 "1", "true" -> if (found == 0) throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取完整的关注列表")
                 else -> throw AdapterException(TaskStatus.UNKNOWN, "暂时无法读取完整的关注列表")
             }
@@ -381,10 +431,11 @@ class TiebaAdapter internal constructor(
             val code = errorCode(result)
             val diagnostic = diagnostic(result)
             val msg = result.optString("error_msg")
+            val bonus = result.optJSONObject("user_info")?.opt("sign_bonus_point")?.toString()?.toIntOrNull()
             return when {
                 code == 160002 -> TaskResult(TaskStatus.ALREADY, "今日已签到", diagnostic)
-                code == 0 && (result.optJSONObject("user_info")?.opt("sign_bonus_point")?.toString()?.toIntOrNull() ?: 0) > 0 ->
-                    TaskResult(TaskStatus.SUCCESS, "签到成功", diagnostic)
+                code == 0 && bonus != null && bonus > 0 ->
+                    TaskResult(TaskStatus.SUCCESS, "签到成功，经验 +$bonus", diagnostic)
                 isManual(msg) -> TaskResult(TaskStatus.MANUAL, "需要在贴吧 App 完成验证", diagnostic)
                 msg.contains("未登录") || msg.contains("请先登录") || msg.contains("登录失效") || msg.contains("登录过期") ->
                     TaskResult(TaskStatus.EXPIRED, "登录已失效，请重新登录", diagnostic)

@@ -2,6 +2,7 @@ package cn.onetap.checkin.platform
 
 import cn.onetap.checkin.core.AdapterException
 import cn.onetap.checkin.core.HttpStatusException
+import cn.onetap.checkin.core.Stat
 import cn.onetap.checkin.core.Target
 import cn.onetap.checkin.core.TaskStatus
 import org.json.JSONObject
@@ -19,8 +20,9 @@ class TiebaSignSelfCheckTest {
         val fixture = Fixture(listOf(guide(0), guide(1)))
         val result = fixture.adapter.execute("synthetic-session", target)
         assertEquals(TaskStatus.SUCCESS, result.status)
-        assertEquals("签到成功", result.message)
-        assertEquals("tieba forumGuide is_sign=1", result.diagnostic)
+        assertEquals("签到成功，经验 +8", result.message)
+        assertEquals("tieba forumGuide is_sign=1; stats 未识别：字段 level_id,level_name,cur_score,levelup_score,cont_sign_num",
+            result.diagnostic)
         assertEquals(listOf("login", "identity", "guide", "sign", "guide"), fixture.calls)
         assertEquals(1, fixture.writes)
     }
@@ -84,6 +86,59 @@ class TiebaSignSelfCheckTest {
         assertEquals("今日已签到", result.message)
         assertEquals(0, fixture.writes)
         assertEquals(1, fixture.reads)
+    }
+
+    @Test fun signedForumQueryUsesFollowedStatsWithoutAnotherReadOrChangingTargetMetadata() {
+        val fixture = Fixture(listOf(guide(1)))
+        fixture.followedForum = JSONObject("""{"id":"101","name":"合成测试","level_id":"7","level_name":"中级粉丝",
+            "cur_score":100,"levelup_score":"150"}""")
+        val identity = fixture.adapter.validate("synthetic-session")
+        val forum = identity.targets.single { it.type == "forum" }
+        assertFalse(forum.metadata.containsKey("level_id"))
+        val stats = listOf(Stat("等级", "Lv.7 中级粉丝"), Stat("经验", "", 100, 150))
+        assertEquals(stats, fixture.adapter.query("synthetic-session", forum)?.stats)
+        assertEquals(stats, fixture.adapter.execute("synthetic-session", forum).stats)
+        assertEquals(listOf("login", "followed", "identity", "guide"), fixture.calls)
+    }
+
+    @Test fun confirmedSignPrefersNewStatsAndKeepsThemAvailableForQuery() {
+        val fixture = Fixture(listOf(guide(0), guide(1)), """{"error_code":0,"user_info":{
+            "level_id":8,"level_name":"高级粉丝","cur_score":153,"levelup_score":300,
+            "cont_sign_num":"12","sign_bonus_point":"8"}}""")
+        fixture.followedForum = JSONObject("""{"id":"101","name":"合成测试","level_id":"7","level_name":"中级粉丝",
+            "cur_score":145,"levelup_score":"150"}""")
+        val forum = fixture.adapter.validate("synthetic-session").targets.first()
+        val result = fixture.adapter.execute("synthetic-session", forum)
+        assertEquals(TaskStatus.SUCCESS, result.status)
+        assertEquals("签到成功，经验 +8", result.message)
+        assertEquals(listOf(Stat("等级", "Lv.8 高级粉丝"), Stat("经验", "", 153, 300), Stat("连签", "12 天")), result.stats)
+        assertEquals(result.stats, fixture.adapter.query("synthetic-session", forum)?.stats)
+        assertEquals(listOf("login", "followed", "identity", "guide", "sign", "guide"), fixture.calls)
+    }
+
+    @Test fun confirmedAlreadyCanUseStatsEvenWhenTheWriteDidNotReportTheBonus() {
+        val fixture = Fixture(listOf(guide(0), guide(1)), """{"error_code":0,"user_info":{
+            "level_name":"中级粉丝","levelup_score":180,"cont_sign_num":12}}""")
+        fixture.followedForum = JSONObject("""{"id":"101","name":"合成测试","level_id":"7","cur_score":100,"levelup_score":150}""")
+        val forum = fixture.adapter.validate("synthetic-session").targets.first()
+        val result = fixture.adapter.execute("synthetic-session", forum)
+        assertEquals(TaskStatus.ALREADY, result.status)
+        assertEquals(listOf(Stat("等级", "Lv.7 中级粉丝"), Stat("经验", "", 100, 180), Stat("连签", "12 天")), result.stats)
+    }
+
+    @Test fun missingOrMaxLevelFieldsKeepTheConfirmedState() {
+        for ((fields, stats) in listOf(
+            "" to emptyList(),
+            ""","level_id":"20","cur_score":1000,"levelup_score":"--","level_name":{ }""" to listOf(Stat("等级", "Lv.20")),
+            ""","level_id":"20","cur_score":1000,"levelup_score":0""" to listOf(Stat("等级", "Lv.20"))
+        )) {
+            val fixture = Fixture(listOf(guide(1)))
+            fixture.followedForum = JSONObject("""{"id":"101","name":"合成测试"$fields}""")
+            val forum = fixture.adapter.validate("synthetic-session").targets.first()
+            val result = fixture.adapter.query("synthetic-session", forum)
+            assertEquals(TaskStatus.ALREADY, result?.status)
+            assertEquals(stats, result?.stats)
+        }
     }
 
     @Test fun writeWithUnknownOrMissingRewardCanOnlyBecomeAlreadyFromIndependentRead() {
@@ -283,6 +338,7 @@ class TiebaSignSelfCheckTest {
         var onWrite: () -> Unit = {}
         var onLogin: (Int) -> Unit = {}
         var onFollowed: (Int) -> Unit = {}
+        var followedForum: JSONObject? = null
         val adapter = TiebaAdapter(null, this, pause = { waits += it; now += it }, clock = { now })
         var identity: (Int) -> JSONObject = { JSONObject("""{"no":0,"data":{"id":"42"}}""") }
         private val remainingGuides = ArrayDeque(guides)
@@ -309,7 +365,8 @@ class TiebaSignSelfCheckTest {
             "https://tiebac.baidu.com/c/f/forum/like" -> {
                 calls += "followed"
                 onFollowed(calls.count { it == "followed" })
-                JSONObject("""{"error_code":0,"forum_list":[],"has_more":0}""")
+                followedForum?.let { JSONObject("""{"error_code":0,"forum_list":{"non-gconforum":[$it]},"has_more":0}""") }
+                    ?: JSONObject("""{"error_code":0,"forum_list":[],"has_more":0}""")
             }
             "https://tieba.baidu.com/c/f/forum/forumGuide" -> {
                 calls += "guide"; reads++

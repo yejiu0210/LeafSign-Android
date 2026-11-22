@@ -58,4 +58,34 @@ class ActionCheckpointTest {
             assertEquals("",Rules.safeDiagnostic(it))
         }
     }
+    @Test fun statsDiagnosticPreservesOnlyTheWhitelistedFieldListAlongsideExistingDiagnostics() {
+        val stats = "stats 未识别：字段 data.userLevel,growthPoint_2,${"a".repeat(40)}"
+        assertEquals(stats, Rules.safeDiagnostic(stats))
+        assertEquals("code=200; $stats", Rules.safeDiagnostic("private-value; code=200; $stats"))
+        assertEquals("tieba forumGuide is_sign=1; $stats",
+            Rules.safeDiagnostic("tieba forumGuide is_sign=1; $stats"))
+        val twentyFields = "stats 未识别：字段 " + (1..20).joinToString(",") { "f$it" }
+        assertEquals(twentyFields, Rules.safeDiagnostic(twentyFields))
+    }
+
+    @Test fun malformedStatsFieldListsAreRejectedInFull() {
+        for (fields in listOf("a,字段", "a,b=private-value", "a,\"b\"", "a,'b'", "a, b", "a,b ",
+            "a,b\n", "a,ｂ", "a,,b", "a,b,", "a,b-c", "a,${"b".repeat(41)}", List(21) { "a" }.joinToString(","))) {
+            val stats = "stats 未识别：字段 $fields"
+            assertEquals(fields, "", Rules.safeDiagnostic(stats))
+            assertEquals(fields, "code=200", Rules.safeDiagnostic("code=200; $stats"))
+        }
+    }
+
+    @Test fun combinedDiagnosticsFitTheLimitWithoutTruncatingAFieldName() {
+        val fields = (1..20).map { "field${it}_${"x".repeat(32)}" }
+        val diagnostic = "code=200; status=123; stats 未识别：字段 " + fields.joinToString(",")
+        val safe = Rules.safeDiagnostic(diagnostic)
+        assertTrue(safe.length <= 240)
+        val prefix = "code=200; status=123; stats 未识别：字段 "
+        assertTrue(safe.startsWith(prefix))
+        val kept = safe.removePrefix(prefix).split(",")
+        assertTrue(kept.size in 1..19)
+        assertEquals(fields.take(kept.size), kept)
+    }
 }

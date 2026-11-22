@@ -5,6 +5,7 @@ import cn.onetap.checkin.core.Identity
 import cn.onetap.checkin.core.NetClient
 import cn.onetap.checkin.core.Platform
 import cn.onetap.checkin.core.PlatformAdapter
+import cn.onetap.checkin.core.Stat
 import cn.onetap.checkin.core.Target
 import cn.onetap.checkin.core.TaskResult
 import cn.onetap.checkin.core.TaskStatus
@@ -12,6 +13,7 @@ import cn.onetap.checkin.core.Rules
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONObject
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 
 /** Member-center level acceleration and explicitly enabled VIP big-point sign-in. */
 class BilibiliAdapter internal constructor(
@@ -20,6 +22,7 @@ class BilibiliAdapter internal constructor(
     override val platform = Platform.BILIBILI
     override val maxTargetConcurrency = 1
     private val net = NetClient(setOf("api.bilibili.com"))
+    private val levelStats = ConcurrentHashMap<String, List<Stat>>()
 
     override fun validate(credential: String): Identity {
         val cookies = parseCookies(credential)
@@ -35,7 +38,12 @@ class BilibiliAdapter internal constructor(
             ?: throw AdapterException(TaskStatus.UNKNOWN, "暂时无法确认账号", "nav; missing mid")
         val vip = data.optJSONObject("vip")
         val vipStatus = strictInt(vip?.opt("status"))
-        val level = strictInt(data.optJSONObject("level_info")?.opt("current_level"))
+        val levelInfo = data.optJSONObject("level_info")
+        val level = strictInt(levelInfo?.opt("current_level"))
+        levelStats[uid] = listOfNotNull(
+            level?.takeIf { it >= 0 }?.let { Stat("等级", "LV$it") },
+            progressStat("经验", levelInfo?.statLong("current_exp"), levelInfo?.statLong("next_exp"))
+        )
         val eligibility = when {
             vipStatus == 0 -> "当前未开通有效大会员"
             vipStatus != 1 -> "大会员资格需由官方会员中心确认"
@@ -91,7 +99,8 @@ class BilibiliAdapter internal constructor(
             else TaskResult(TaskStatus.UNKNOWN, "经验领取结果未确认", "experience/add; code=69198", "到账状态待确认")
         }
         checkCode(response, "experience/add")
-        return parseClaimResponse(response)
+        val result = parseClaimResponse(response)
+        return if (result.status == TaskStatus.SUCCESS) withLevelStats(result, target) else result
     }
 
     private fun queryState(cookies: Map<String, String>, target: Target): TaskResult {
@@ -112,8 +121,12 @@ class BilibiliAdapter internal constructor(
         if (level < 0) return TaskResult(TaskStatus.UNKNOWN, "正式会员等级字段未知", "vip_center/v2; invalid experience.level", "到账状态待确认")
         if (level == 0)
             return TaskResult(TaskStatus.INELIGIBLE, "需先在官方完成答题成为正式会员", "vip_center/v2; experience.level=0", "未领取")
-        return parseExperienceState(experience)
+        val result = parseExperienceState(experience)
+        return if (result.status == TaskStatus.ALREADY) withLevelStats(result, target) else result
     }
+
+    private fun withLevelStats(result: TaskResult, target: Target): TaskResult =
+        result.copy(stats = target.metadata["ownerUserId"]?.let { levelStats[it] }.orEmpty())
 
     private fun get(url: String, headers: Map<String,String>): JSONObject = exchange?.invoke("GET",url,null,headers) ?: net.get(url,headers)
 
@@ -152,7 +165,8 @@ class BilibiliAdapter internal constructor(
         val after = try { queryBigPoint(cookies) }
         catch (e: AdapterException) { return TaskResult(e.status,"暂时无法查询签到状态",Rules.safeDiagnostic(e.diagnostic)) }
         catch (_: IOException) { return TaskResult(TaskStatus.UNKNOWN,"结果未确认，请稍后重试") }
-        return if (after?.status == TaskStatus.PENDING) TaskResult(TaskStatus.UNKNOWN,"结果未确认，请稍后重试") else result
+        return if (after?.status == TaskStatus.PENDING) TaskResult(TaskStatus.UNKNOWN,"结果未确认，请稍后重试")
+        else result.copy(stats = after?.stats.orEmpty())
     }
 
     private fun checkCode(response: JSONObject, endpoint: String) {
@@ -194,7 +208,8 @@ class BilibiliAdapter internal constructor(
             val data = response.optJSONObject("data") ?: return null
             val signed = data.optJSONObject("three_day_sign")?.opt("signed") as? Boolean ?: return null
             val balance = numericValue(data.optJSONObject("big_point")?.opt("point"))
-            return if (signed) TaskResult(TaskStatus.ALREADY,"今日已签到"+(balance?.let { "，当前大积分 $it" } ?: ""),"code=0")
+            return if (signed) TaskResult(TaskStatus.ALREADY,"今日已签到","code=0",
+                stats = listOfNotNull(balance?.let { Stat("大积分", it) }))
                 else TaskResult(TaskStatus.PENDING,"今日大积分尚未签到","code=0")
         }
 

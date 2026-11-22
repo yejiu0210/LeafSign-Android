@@ -1,6 +1,7 @@
 package cn.onetap.checkin.platform
 
 import cn.onetap.checkin.core.AdapterException
+import cn.onetap.checkin.core.Stat
 import cn.onetap.checkin.core.TaskStatus
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -11,6 +12,40 @@ import org.junit.Test
 
 /** Synthetic fixtures only. These tests never contact Bilibili or stand for account verification. */
 class BilibiliAdapterTest {
+    @Test fun navStatsAreReusedForCompletedLevelTasksIncludingMaxLevel() {
+        val credential = "SESSDATA=synthetic; bili_jct=synthetic"
+        for ((levelInfo, expected) in listOf(
+            """{"current_level":6,"current_exp":30000,"next_exp":"--"}""" to listOf(Stat("等级", "LV6")),
+            """{"current_level":5,"current_exp":9000,"next_exp":10800}""" to
+                listOf(Stat("等级", "LV5"), Stat("经验", "", 9000, 10800)),
+            """{"current_level":{},"current_exp":false,"next_exp":null}""" to emptyList()
+        )) {
+            val requests = mutableListOf<String>()
+            var state = 1
+            val adapter = BilibiliAdapter { method, url, _, _ ->
+                requests += "$method ${url.substringAfter("api.bilibili.com").substringBefore('?')}"
+                JSONObject(when {
+                    url.endsWith("/nav") ->
+                        """{"code":0,"data":{"isLogin":true,"mid":123,"vip":{"status":1},"level_info":$levelInfo}}"""
+                    url.contains("/vip_center/v2") ->
+                        """{"code":0,"data":{"vip_info":{"mid":123,"vip_status":1},"experience":{"level":5,"state":$state}}}"""
+                    url.endsWith("/experience/add") -> """{"code":0,"data":{"type":0,"is_grant":true}}"""
+                    else -> error("Unexpected endpoint")
+                })
+            }
+            val target = adapter.validate(credential).targets.first()
+            val already = adapter.query(credential, target)
+            assertEquals(TaskStatus.ALREADY, already?.status)
+            assertEquals(expected, already?.stats)
+            state = 0
+            val signed = adapter.execute(credential, target)
+            assertEquals(TaskStatus.SUCCESS, signed.status)
+            assertEquals(expected, signed.stats)
+            assertEquals(listOf("GET /x/web-interface/nav", "GET /x/vip/web/vip_center/v2",
+                "GET /x/vip/web/vip_center/v2", "POST /x/vip/experience/add"), requests)
+        }
+    }
+
     @Test fun unknownOrMissingStatusDoesNotBecomeAlready() {
         assertEquals(TaskStatus.UNKNOWN, BilibiliAdapter.parseExperienceState(JSONObject()).status)
         assertEquals(TaskStatus.UNKNOWN, BilibiliAdapter.parseExperienceState(JSONObject("{\"state\":99}")).status)

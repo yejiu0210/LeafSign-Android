@@ -30,11 +30,14 @@ data class Identity(
     val updatedCredential: String? = null
 )
 
+data class Stat(val label: String, val value: String, val current: Long? = null, val total: Long? = null)
+
 data class TaskResult(
     val status: TaskStatus,
     val message: String,
     val diagnostic: String = "",
-    val experienceState: String = ""
+    val experienceState: String = "",
+    val stats: List<Stat> = emptyList()
 )
 
 interface PlatformAdapter {

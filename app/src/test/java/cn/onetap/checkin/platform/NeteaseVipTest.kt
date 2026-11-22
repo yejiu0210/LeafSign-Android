@@ -1,5 +1,7 @@
 package cn.onetap.checkin.platform
 
+import cn.onetap.checkin.core.AdapterException
+import cn.onetap.checkin.core.Stat
 import cn.onetap.checkin.core.Target
 import cn.onetap.checkin.core.TaskStatus
 import org.json.JSONObject
@@ -13,6 +15,8 @@ class NeteaseVipTest {
     private val target = Target(NeteaseAdapter.TARGET_ID, NeteaseAdapter.TARGET_TYPE, "黑胶乐签",
         metadata = mapOf("ownerUserId" to "123"))
     private val identity = """{"code":200,"account":{"id":123},"profile":{"userId":123,"nickname":"测试用户"}}"""
+    private val growthPath = "/vipnewcenter/app/level/growhpoint/basic"
+    private val growth = """{"code":200,"data":{"userLevel":{"level":5,"growthPoint":"2500","nextLevelGrowthPoint":3000}}}"""
     private fun state(signed: Boolean) = """{"code":200,"data":{"signInfoList":[{"today":false,"sign":true},{"today":true,"sign":$signed}]}}"""
 
     private data class Call(val path: String, val data: JSONObject, val cookies: Map<String, String>, val eapi: Boolean)
@@ -51,10 +55,12 @@ class NeteaseVipTest {
 
     @Test fun musicSignUsesTwoRequiredStepsAndVerifiesServerState() {
         val calls = mutableListOf<Call>()
-        val adapter = fake(listOf(identity, state(false), """{"code":200,"data":true}""", """{"code":200,"data":{"recordId":1}}""", state(true)), calls)
-        assertEquals(TaskStatus.SUCCESS, adapter.execute("MUSIC_U=synthetic; foreign=never-forward", target).status)
+        val adapter = fake(listOf(identity, state(false), """{"code":200,"data":true}""", """{"code":200,"data":{"recordId":1}}""", state(true), growth), calls)
+        val result = adapter.execute("MUSIC_U=synthetic; foreign=never-forward", target)
+        assertEquals(TaskStatus.SUCCESS, result.status)
+        assertEquals(listOf(Stat("黑胶等级", "V5"), Stat("成长值", "", 2500, 3000)), result.stats)
         assertEquals(listOf("/nuser/account/get", "/vipnewcenter/app/minidesk/music/sign/pc", "/vip-center-bff/task/sign",
-            "/vipnewcenter/app/level/user/checkin/history/detail", "/vipnewcenter/app/minidesk/music/sign/pc"), calls.map { it.path })
+            "/vipnewcenter/app/level/user/checkin/history/detail", "/vipnewcenter/app/minidesk/music/sign/pc", growthPath), calls.map { it.path })
         assertFalse(calls[0].eapi)
         assertTrue(calls[1].eapi)
         assertFalse(calls[2].eapi)
@@ -63,6 +69,8 @@ class NeteaseVipTest {
         assertEquals(1, calls[3].data.getInt("type"))
         assertTrue(calls[3].data.getLong("signDayTime") > 0)
         assertEquals(1, calls[4].data.getInt("type"))
+        assertFalse(calls[5].eapi)
+        assertEquals(0, calls[5].data.length())
         assertTrue(calls.all { it.cookies.keys == setOf("MUSIC_U") })
         assertTrue(calls.none { it.path.contains("dailyTask") || it.path.contains("reward") })
     }
@@ -84,7 +92,7 @@ class NeteaseVipTest {
         val calls = mutableListOf<Call>()
         val waits = mutableListOf<Long>()
         val adapter = fake(listOf(identity, state(false), """{"code":200}""", """{"code":200}""",
-            state(false), state(false), state(true)), calls, waits::add)
+            state(false), state(false), state(true), growth), calls, waits::add)
         val result = adapter.execute("synthetic", target)
         assertEquals(TaskStatus.SUCCESS, result.status)
         assertEquals("签到成功", result.message)
@@ -112,20 +120,70 @@ class NeteaseVipTest {
         }
         assertEquals(TaskStatus.SUCCESS, adapter.execute("synthetic", target).status)
         assertEquals(listOf(1000L), waits)
-        assertEquals(6, calls.size)
+        assertEquals(7, calls.size)
     }
 
     @Test fun alreadySignedDoesNotSendEitherWriteStep() {
         val calls = mutableListOf<Call>()
-        val adapter = fake(listOf(identity, state(true)), calls)
+        val adapter = fake(listOf(identity, state(true), growth), calls)
         assertEquals(TaskStatus.ALREADY, adapter.execute("synthetic", target).status)
-        assertEquals(2, calls.size)
+        assertEquals(listOf("/nuser/account/get", "/vipnewcenter/app/minidesk/music/sign/pc", growthPath), calls.map { it.path })
     }
 
     @Test fun unknownDetailCannotClaimThisRequestSucceededEvenWhenTodayIsConfirmed() {
         val calls=mutableListOf<Call>()
-        val adapter=fake(listOf(identity,state(false),"""{"code":200}""","""{"code":999}""",state(true)),calls)
+        val adapter=fake(listOf(identity,state(false),"""{"code":200}""","""{"code":999}""",state(true),growth),calls)
         assertEquals(TaskStatus.ALREADY,adapter.execute("synthetic",target).status)
+    }
+
+    @Test fun growthStatsUseCandidateFieldsAndKeepDiagnosticLimitedToFieldNames() {
+        val cases = listOf(
+            """{"code":200,"data":{"levelCard":{"vipLevel":"7","growPoint":4800}}}""" to
+                listOf(Stat("黑胶等级", "V7"), Stat("成长值", "4800")),
+            """{"code":200,"data":{"userLevel":{"level":{},"growthPoint":"private-value","nextLevelGrowthPoint":false,
+                "private-key":"secret"}}}""" to emptyList()
+        )
+        for ((response, expected) in cases) {
+            val calls = mutableListOf<Call>()
+            val adapter = fake(listOf(identity, state(true), response, identity, state(true)), calls)
+            val result = adapter.query("synthetic", target)!!
+            assertEquals(TaskStatus.ALREADY, result.status)
+            assertEquals(expected, result.stats)
+            if (expected.isEmpty()) {
+                assertEquals("level,vipLevel,currentLevel,growthPoint,currentGrowthPoint,growPoint,nextLevelGrowthPoint," +
+                    "nextGrowthPoint,nextLevelPoint,nextLevelNeedGrowthPoint", result.diagnostic.substringAfter("stats 未识别：字段 "))
+            } else assertFalse(result.diagnostic.contains("stats 未识别"))
+            assertEquals(result, adapter.execute("synthetic", target))
+            assertEquals(1, calls.count { it.path == growthPath })
+        }
+    }
+
+    @Test fun statReadFailuresPreserveCompletionAndAreCachedUntilTheNextValidation() {
+        var reads = 0
+        val adapter = NeteaseAdapter { path, _, _, _ ->
+            when (path) {
+                "/nuser/account/get" -> JSONObject(identity)
+                "/vipnewcenter/app/minidesk/music/sign/pc" -> JSONObject(state(true))
+                growthPath -> when (++reads) {
+                    1 -> throw IOException("private-value")
+                    2 -> throw AdapterException(TaskStatus.EXPIRED, "private-value")
+                    else -> JSONObject(growth)
+                }
+                else -> error("Unexpected endpoint")
+            }
+        }
+        for (attempt in 1..2) {
+            adapter.validate("synthetic")
+            val result = adapter.query("synthetic", target)!!
+            assertEquals(TaskStatus.ALREADY, result.status)
+            assertTrue(result.stats.isEmpty())
+            assertFalse(result.diagnostic.contains("private-value"))
+            assertEquals(result, adapter.execute("synthetic", target))
+            assertEquals(attempt, reads)
+        }
+        adapter.validate("synthetic")
+        assertEquals(listOf(Stat("黑胶等级", "V5"), Stat("成长值", "", 2500, 3000)), adapter.query("synthetic", target)?.stats)
+        assertEquals(3, reads)
     }
 
     @Test fun eapiHeaderCookieUsesUpstreamPercentEncoding() {

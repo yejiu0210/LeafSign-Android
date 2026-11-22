@@ -28,7 +28,8 @@ data class Record(
     val id: String = UUID.randomUUID().toString(), val accountId: String,
     val platform: Platform, val accountLabel: String, val targetId: String,
     val task: String, val period: String, val time: Long = System.currentTimeMillis(),
-    val status: TaskStatus, val message: String, val diagnostic: String = "", val experienceState: String = ""
+    val status: TaskStatus, val message: String, val diagnostic: String = "", val experienceState: String = "",
+    val stats: List<Stat> = emptyList()
 )
 data class Settings(val auto: Boolean = false, val hour: Int = 9, val minute: Int = 0, val notifications: Boolean = false, val offerCatchup: Boolean = true, val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val concurrency: Int = 4, val useAlarmClock: Boolean = true, val shizukuDaemon: Boolean = false, val lastAutoRunDate: String = "",
@@ -104,18 +105,30 @@ object Rules {
         return state.copy(accounts = state.accounts.filterNot { it.id == account.id } + account)
     }
     fun safeDiagnostic(value: String): String {
-        Regex("HTTP 3[0-9]{2}; (?:tieba endpoint=/(?:c/s/login|c/f/forum/(?:like|forumGuide)|c/c/forum/sign|mo/q/newmoindex); )?location_host=(?:[a-z0-9.-]{1,253}|[a-f0-9]*:[a-f0-9:]{1,44})")
-            .matchEntire(value)?.let { return it.value }
-        Regex("tieba forumGuide is_sign=[01]").matchEntire(value)?.let { return it.value }
-        val tiebaDetail = Regex("tieba endpoint=pb_page reason=(?:thread_unavailable|verification|login|other|missing) thread_id=[1-9][0-9]{0,18} error_code=(?:-?[0-9]{1,10}|missing)")
-            .matchEntire(value)?.value
-        if (tiebaDetail != null) return tiebaDetail
-        val numeric = Regex("(?i)\\b(?:HTTP [1-5][0-9]{2}|(?:code|status|errno|retcode|error_code|experience\\.state)[=: ]+(?:-?[0-9]{1,10}|missing)|exception[=: ]+[A-Za-z]{1,60})\\b")
-            .findAll(value).map { it.value }.toList()
-        // Only public thread/forum identifiers; account IDs and server text are excluded.
-        val tiebaIdentity = Regex("tieba field=(?:thread_id|forum_id|redundant_fid) expected=[1-9][0-9]{0,18} actual=(?:[1-9][0-9]{0,18}|missing|zero|invalid)")
-            .matchEntire(value)?.value
-        return (numeric+listOfNotNull(tiebaIdentity)).distinct().joinToString("; ").take(240)
+        val statsPrefix = "stats 未识别：字段 "
+        val stats = value.substringAfterLast("; ").takeIf {
+            Regex("${statsPrefix}[A-Za-z0-9_.]{1,40}(?:,[A-Za-z0-9_.]{1,40}){0,19}").matches(it)
+        }
+        val original = if (stats == null) value else value.removeSuffix(stats).removeSuffix("; ")
+        fun sanitizeOriginal(): String {
+            Regex("HTTP 3[0-9]{2}; (?:tieba endpoint=/(?:c/s/login|c/f/forum/(?:like|forumGuide)|c/c/forum/sign|mo/q/newmoindex); )?location_host=(?:[a-z0-9.-]{1,253}|[a-f0-9]*:[a-f0-9:]{1,44})")
+                .matchEntire(original)?.let { return it.value }
+            Regex("tieba forumGuide is_sign=[01]").matchEntire(original)?.let { return it.value }
+            Regex("tieba endpoint=pb_page reason=(?:thread_unavailable|verification|login|other|missing) thread_id=[1-9][0-9]{0,18} error_code=(?:-?[0-9]{1,10}|missing)")
+                .matchEntire(original)?.let { return it.value }
+            val numeric = Regex("(?i)\\b(?:HTTP [1-5][0-9]{2}|(?:code|status|errno|retcode|error_code|experience\\.state)[=: ]+(?:-?[0-9]{1,10}|missing)|exception[=: ]+[A-Za-z]{1,60})\\b")
+                .findAll(original).map { it.value }.toList()
+            // Only public thread/forum identifiers; account IDs and server text are excluded.
+            val tiebaIdentity = Regex("tieba field=(?:thread_id|forum_id|redundant_fid) expected=[1-9][0-9]{0,18} actual=(?:[1-9][0-9]{0,18}|missing|zero|invalid)")
+                .matchEntire(original)?.value
+            return (numeric + listOfNotNull(tiebaIdentity)).distinct().joinToString("; ").take(240)
+        }
+        val safe = sanitizeOriginal()
+        if (stats == null) return safe
+        val head = if (safe.isEmpty()) "" else "$safe; "
+        val room = (240 - head.length).coerceAtLeast(0)
+        val suffix = if (stats.length <= room) stats else stats.take(room).substringBeforeLast(',', "")
+        return if (suffix.isEmpty()) safe.take(240) else head + suffix
     }
     fun resultTitle(status: TaskStatus, targetId: String): String = if(targetId.startsWith("tieba:like:")) when(status) {
         TaskStatus.SUCCESS -> "点赞完成"
@@ -196,6 +209,16 @@ internal object StateJson {
         }) } })
         put("records",JSONArray().apply { state.records.takeLast(3000).forEach { r -> put(JSONObject().apply {
             put("id",r.id);put("accountId",r.accountId);put("platform",r.platform.name);put("accountLabel",r.accountLabel);put("targetId",r.targetId);put("task",r.task);put("period",r.period);put("time",r.time);put("status",r.status.name);put("message",r.message);put("diagnostic",r.diagnostic);put("experienceState",r.experienceState)
+            if (r.stats.isNotEmpty()) put("stats", JSONArray().apply {
+                r.stats.forEach { stat ->
+                    put(JSONObject().apply {
+                        put("label", stat.label)
+                        put("value", stat.value)
+                        stat.current?.let { put("current", it) }
+                        stat.total?.let { put("total", it) }
+                    })
+                }
+            })
         }) } })
         put("settings",SettingsJson.encode(state.settings))
         put("checkpoints",CheckpointsJson.encode(state.checkpoints))
@@ -210,7 +233,20 @@ internal object StateJson {
             val enabled = a.getJSONArray("enabled")
             Account(a.getString("id"),Platform.valueOf(a.getString("platform")),a.getString("userId"),a.getString("name"),a.optString("note"),a.getString("credential"),targets,(0 until enabled.length()).map { enabled.getString(it) }.toSet(),a.optString("details"),a.optLong("checkedAt"))
         }
-        val records = objects(root.optJSONArray("records") ?: JSONArray()).map { r -> Record(r.getString("id"),r.getString("accountId"),Platform.valueOf(r.getString("platform")),r.getString("accountLabel"),r.getString("targetId"),r.getString("task"),r.getString("period"),r.getLong("time"),TaskStatus.valueOf(r.getString("status")),r.getString("message"),r.optString("diagnostic"),r.optString("experienceState")) }
+        val records = objects(root.optJSONArray("records") ?: JSONArray()).map { r ->
+            val stats = r.optJSONArray("stats")?.let { array ->
+                (0 until array.length()).mapNotNull { index ->
+                    val stat = array.optJSONObject(index) ?: return@mapNotNull null
+                    Stat(
+                        label = stat.getString("label"),
+                        value = stat.getString("value"),
+                        current = stat.opt("current")?.toString()?.toLongOrNull(),
+                        total = stat.opt("total")?.toString()?.toLongOrNull()
+                    )
+                }
+            }.orEmpty()
+            Record(r.getString("id"),r.getString("accountId"),Platform.valueOf(r.getString("platform")),r.getString("accountLabel"),r.getString("targetId"),r.getString("task"),r.getString("period"),r.getLong("time"),TaskStatus.valueOf(r.getString("status")),r.getString("message"),r.optString("diagnostic"),r.optString("experienceState"), stats = stats)
+        }
         val s = root.optJSONObject("settings") ?: JSONObject()
         val checkpoints=CheckpointsJson.decode(root.optJSONArray("checkpoints"))
         return AppState(accounts, records, SettingsJson.decode(s), checkpoints)

@@ -12,17 +12,22 @@ class NeteaseYunbeiTest {
     private val credential="MUSIC_U=fixture-sensitive; __csrf=fixture-csrf; other=drop"
     private val target=Target(NeteaseAdapter.YUNBEI_ID,NeteaseAdapter.YUNBEI_TYPE,"云贝签到",metadata=mapOf("ownerUserId" to "123"))
     private val identity="""{"code":200,"account":{"id":123},"profile":{"userId":123,"nickname":"测试"}}"""
+    private val balancePath = "/v1/user/info"
     private data class Call(val path:String,val eapi:Boolean,val data:JSONObject,val cookie:Map<String,String>)
-    private inner class Api(vararg responses:Any) {
+    private inner class Api(vararg responses:Any, val balanceResponse: String = """{"code":200,"userPoint":{"balance":42}}""") {
         val queue=ArrayDeque(responses.toList())
         val calls=mutableListOf<Call>()
         val waits=mutableListOf<Long>()
         val adapter=NeteaseAdapter(pause=waits::add) {path,data,cookie,eapi->
             calls+=Call(path,eapi,JSONObject(data.toString()),cookie)
-            if(path=="/nuser/account/get")JSONObject(identity) else when(val next=queue.removeFirst()) {
-                is Exception -> throw next
-                is RawResponse -> NeteaseAdapter.parseYunbeiChannelResponse(next)
-                else -> JSONObject(next.toString())
+            when (path) {
+                "/nuser/account/get" -> JSONObject(identity)
+                balancePath -> JSONObject(balanceResponse)
+                else -> when(val next=queue.removeFirst()) {
+                    is Exception -> throw next
+                    is RawResponse -> NeteaseAdapter.parseYunbeiChannelResponse(next)
+                    else -> JSONObject(next.toString())
+                }
             }
         }
         val writes get()=calls.filter {it.path=="/pointmall/user/sign"}
@@ -57,8 +62,11 @@ class NeteaseYunbeiTest {
         val api=Api(state(false),"""{"code":200,"data":{"point":5}}""",state(true))
         val result=api.adapter.execute(credential,target)
         assertEquals(TaskStatus.SUCCESS,result.status);assertEquals("云贝签到成功，获得 5 云贝",result.message)
-        assertEquals(listOf("/nuser/account/get","/point/signed/get","/pointmall/user/sign","/point/signed/get"),api.calls.map {it.path})
-        assertTrue(api.calls.drop(1).all {it.eapi && it.data.length()==0})
+        assertEquals(listOf(Stat("云贝", "42")), result.stats)
+        assertEquals(listOf("/nuser/account/get","/point/signed/get","/pointmall/user/sign","/point/signed/get",balancePath),api.calls.map {it.path})
+        assertTrue(api.calls.drop(1).dropLast(1).all {it.eapi && it.data.length()==0})
+        assertFalse(api.calls.last().eapi)
+        assertEquals(0, api.calls.last().data.length())
         assertTrue(api.calls.all {it.cookie.keys==setOf("MUSIC_U","__csrf")})
         assertEquals("code=200",Rules.safeDiagnostic(result.diagnostic))
     }
@@ -89,6 +97,24 @@ class NeteaseYunbeiTest {
         val wrong=Api()
         assertEquals(TaskStatus.EXPIRED,wrong.adapter.execute(credential,target.copy(metadata=mapOf("ownerUserId" to "456"))).status)
         assertEquals(1,wrong.calls.size)
+    }
+
+    @Test fun balanceCandidatesAndMissingFieldsUseOneReadForTheAccount() {
+        for ((payload, expected) in listOf(
+            """{"code":200,"data":{"userPoint":{"balance":"28"}}}""" to listOf(Stat("云贝", "28")),
+            """{"code":200,"pointsBalance":0}""" to listOf(Stat("云贝", "0")),
+            """{"code":200,"userPoint":{"balance":true},"data":{"pointsBalance":"private-value"}}""" to emptyList()
+        )) {
+            val api = Api(state(true), state(true), balanceResponse = payload)
+            val result = api.adapter.query(credential, target)!!
+            assertEquals(TaskStatus.ALREADY, result.status)
+            assertEquals(expected, result.stats)
+            assertEquals(if (expected.isEmpty()) "code=200; stats 未识别：字段 balance,pointsBalance" else "code=200",
+                result.diagnostic)
+            assertEquals(result, api.adapter.execute(credential, target))
+            assertEquals(1, api.calls.count { it.path == balancePath })
+            assertTrue(api.writes.isEmpty())
+        }
     }
 
     @Test fun businessCodesMapWithoutEchoingMessagesOrCredentialValues() {
@@ -125,7 +151,7 @@ class NeteaseYunbeiTest {
     @Test fun readChannelCanFallBackAndBothUnusableWriteChannelsStopAfterTwoAttempts() {
         val read=Api(RawResponse(500,"not-json",emptyList()),state(true))
         assertEquals(TaskStatus.ALREADY,read.adapter.query(credential,target)?.status)
-        assertEquals(listOf(true,false),read.calls.drop(1).map {it.eapi})
+        assertEquals(listOf(true,false),read.calls.filter { it.path == "/point/signed/get" }.map {it.eapi})
         val write=Api(state(false),RawResponse(500,"not-json",emptyList()),RawResponse(200,"also-not-json",emptyList()))
         val error=assertThrows(AdapterException::class.java) {write.adapter.execute(credential,target)}
         assertEquals(TaskStatus.UNKNOWN,error.status);assertEquals(2,write.writes.size)

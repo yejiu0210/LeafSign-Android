@@ -1,6 +1,8 @@
 package cn.onetap.checkin.platform
 
 import cn.onetap.checkin.core.AdapterException
+import cn.onetap.checkin.core.Rules
+import cn.onetap.checkin.core.Stat
 import cn.onetap.checkin.core.TaskStatus
 import org.json.JSONArray
 import org.json.JSONObject
@@ -81,10 +83,15 @@ class SklandAdapterTest {
     }
 
     @Test fun gameRewardSchemasAreSeparateAndMissingFieldsNeverSucceed() {
-        val ark = JSONObject("""{"code":0,"data":{"awards":[{"resource":{"name":"合成玉"},"count":100}]}}""")
+        val ark = JSONObject("""{"code":0,"data":{"awards":[{"resource":{"name":"龙门币"},"count":3000},
+            {"resource":{"name":"合成玉"},"count":100}]}}""")
         val ef = JSONObject("""{"code":0,"data":{"ts":"1700000000","awardIds":[{"id":"reward"}],"resourceInfoMap":{"reward":{"name":"嵌晶玉","count":80}}}}""")
-        assertEquals(TaskStatus.SUCCESS, SklandAdapter.parseAttendanceResult("arknights", ark).status)
-        assertEquals(TaskStatus.SUCCESS, SklandAdapter.parseAttendanceResult("endfield", ef).status)
+        for ((kind, response, value) in listOf(Triple("arknights", ark, "龙门币 ×3000、合成玉 ×100"), Triple("endfield", ef, "嵌晶玉 ×80"))) {
+            val result = SklandAdapter.parseAttendanceResult(kind, response)
+            assertEquals(TaskStatus.SUCCESS, result.status)
+            assertEquals("签到成功", result.message)
+            assertEquals(listOf(Stat("今日奖励", value)), result.stats)
+        }
         assertEquals(TaskStatus.UNKNOWN, SklandAdapter.parseAttendanceResult("arknights", ef).status)
         assertEquals(TaskStatus.UNKNOWN, SklandAdapter.parseAttendanceResult("endfield", ark).status)
         for (json in listOf("{}", "{\"code\":0}", "{\"code\":0,\"data\":{}}", "{\"code\":0,\"data\":{\"awards\":[]}}")) {
@@ -92,6 +99,15 @@ class SklandAdapterTest {
         }
         assertEquals(TaskStatus.UNKNOWN, SklandAdapter.parseAttendanceResult("arknights",
             JSONObject("""{"code":0.5,"data":{"awards":[{"resource":{"name":"合成玉"},"count":100}]}}""")).status)
+    }
+
+    @Test fun rewardTextIsLimitedToFortyCharacters() {
+        val name = "超长的奖励名称".repeat(8)
+        val response = JSONObject("""{"code":0,"data":{"awards":[{"resource":{"name":"$name"},"count":3}]}}""")
+        val result = SklandAdapter.parseAttendanceResult("arknights", response)
+        assertEquals(TaskStatus.SUCCESS, result.status)
+        assertEquals(40, result.stats.single().value.length)
+        assertTrue(result.stats.single().value.endsWith("…"))
     }
 
     @Test fun endfieldStateRequiresActualBoolean() {
@@ -108,6 +124,69 @@ class SklandAdapterTest {
         assertEquals(TaskStatus.UNKNOWN, SklandAdapter.parseAttendanceState("arknights", unavailable).status)
         unavailable.getJSONObject("data").getJSONArray("records").put(JSONObject().put("ts", "1700000000"))
         assertEquals(TaskStatus.ALREADY, SklandAdapter.parseAttendanceState("arknights", unavailable).status)
+    }
+
+    @Test fun arkAlreadySignedMapsAllTodayRecordsUsingTheServerDateInShanghai() {
+        // 16:00 UTC starts the next day in Shanghai. Ignore the previous day's reward.
+        val response = JSONObject("""{"code":0,"data":{
+            "currentTs":1700064010,
+            "calendar":[{"type":"daily","available":false,"done":true}],
+            "records":[{"ts":1700063999,"resourceId":"old","count":1},
+                {"ts":1700064000,"resourceId":"lmd","count":3000},
+                {"ts":1700064000,"awardIds":[{"id":"jade"}]}],
+            "resourceInfoMap":{"old":{"name":"昨日物品"},"lmd":{"name":"龙门币","count":9},"jade":{"name":"合成玉","count":100}}
+        }}""")
+        val result = SklandAdapter.parseAttendanceState("arknights", response)
+        assertEquals(TaskStatus.ALREADY, result.status)
+        assertEquals(listOf(Stat("今日奖励", "龙门币 ×3000、合成玉 ×100")), result.stats)
+    }
+
+    @Test fun endfieldSignedCalendarUsesTheLastConsecutiveDoneDailySlot() {
+        val response = JSONObject("""{"code":0,"data":{"hasToday":true,"calendar":[
+            {"type":"daily","done":true,"awardId":"first"},
+            {"type":"daily","done":true,"awardId":"today","count":"80"},
+            {"type":"special","done":true,"awardId":"bonus"},
+            {"type":"daily","done":false,"awardId":"future"}],
+            "resourceInfoMap":{"first":{"name":"已领物品","count":4},"today":{"name":"嵌晶玉"},
+                "bonus":{"name":"额外物品","count":5},"future":{"name":"未来物品","count":100}}}}""")
+        val result = SklandAdapter.parseAttendanceState("endfield", response)
+        assertEquals(TaskStatus.ALREADY, result.status)
+        assertEquals(listOf(Stat("今日奖励", "嵌晶玉 ×80")), result.stats)
+
+        response.getJSONObject("data").put("hasToday", false)
+        assertTrue(SklandAdapter.parseAttendanceState("endfield", response).stats.isEmpty())
+    }
+
+    @Test fun endfieldUsesDatedCalendarRewardsAndFallsBackToAnExplicitAwardList() {
+        val response = JSONObject("""{"code":0,"data":{"hasToday":true,"currentTs":1700064010,
+            "calendar":[{"type":"daily","done":true,"ts":1700063999,"awardId":"old"},
+                {"type":"daily","done":true,"ts":1700064000,"awardId":"today"}],
+            "resourceInfoMap":{"old":{"name":"昨日物品","count":4},"today":{"name":"嵌晶玉","count":80}}}}""")
+        val expected = listOf(Stat("今日奖励", "嵌晶玉 ×80"))
+        assertEquals(expected, SklandAdapter.parseAttendanceState("endfield", response).stats)
+        response.getJSONObject("data").apply {
+            remove("calendar")
+            put("awardIds", JSONArray().put("today"))
+        }
+        assertEquals(expected, SklandAdapter.parseAttendanceState("endfield", response).stats)
+    }
+
+    @Test fun missingOrAmbiguousRewardDataRetainsAlreadyAndOnlyReportsFieldNames() {
+        val ark = JSONObject("""{"code":0,"data":{"currentTs":1700064010,
+            "calendar":[{"type":"daily","available":false,"done":true}],
+            "records":[{"ts":9223372036854775807},{"ts":1700064000,"resourceId":"private-value"}],
+            "privateKey":"private-value"}}""")
+        val ef = JSONObject("""{"code":0,"data":{"hasToday":true,"calendar":[
+            {"type":"daily","done":false,"awardId":"missed"},
+            {"type":"daily","done":true,"awardId":"done"}],
+            "resourceInfoMap":{"done":{"name":"private-value","count":80}}}}""")
+        for ((kind, response) in listOf("arknights" to ark, "endfield" to ef)) {
+            val result = SklandAdapter.parseAttendanceState(kind, response)
+            assertEquals(TaskStatus.ALREADY, result.status)
+            assertTrue(result.stats.isEmpty())
+            assertEquals("stats 未识别：字段 records,calendar,ts,date,done,awardIds,awardId,resourceId,resourceInfoMap,id,name,count",
+                Rules.safeDiagnostic(result.diagnostic))
+        }
     }
 
     @Test fun errorDiagnosticsNeverEchoUntrustedMessagesOrCredentialFields() {

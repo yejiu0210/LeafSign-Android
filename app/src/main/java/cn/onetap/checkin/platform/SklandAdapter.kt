@@ -5,6 +5,7 @@ import cn.onetap.checkin.core.Identity
 import cn.onetap.checkin.core.NetClient
 import cn.onetap.checkin.core.Platform
 import cn.onetap.checkin.core.PlatformAdapter
+import cn.onetap.checkin.core.Stat
 import cn.onetap.checkin.core.Target
 import cn.onetap.checkin.core.TaskResult
 import cn.onetap.checkin.core.TaskStatus
@@ -12,6 +13,10 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.time.DateTimeException
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -233,6 +238,7 @@ class SklandAdapter internal constructor(
         private const val ARK_PATH = "/api/v1/game/attendance"
         private const val ENDFIELD_PATH = "/web/v1/game/endfield/attendance"
         private const val USER_AGENT = "Skland/1.32.1 (com.hypergryph.skland; build:103201004; Android 33; ) Okhttp/4.11.0"
+        private val attendanceZone = ZoneId.of("Asia/Shanghai")
 
         /** Header ordering and body bytes must exactly match the signed material. */
         internal fun signature(token: String, path: String, bodyOrQuery: String, timestamp: String, did: String = ""): String {
@@ -304,8 +310,9 @@ class SklandAdapter internal constructor(
             if (kind == ENDFIELD) {
                 val hasToday = data.opt("hasToday") as? Boolean
                     ?: return TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", diagnostic(kind, response))
-                return TaskResult(if (hasToday) TaskStatus.ALREADY else TaskStatus.PENDING,
-                    if (hasToday) "今日已签到" else "今日尚未签到")
+                if (!hasToday) return TaskResult(TaskStatus.PENDING, "今日尚未签到")
+                val today = attendanceDate(data, "currentTs")
+                return signedToday(data, today, todayRecords(data, today), endfield = true)
             }
             if (kind != ARK) return TaskResult(TaskStatus.NOT_CONNECTED, "不支持的森空岛任务")
             val calendar = data.optJSONArray("calendar")
@@ -316,17 +323,87 @@ class SklandAdapter internal constructor(
             if (daily.any { it.optBoolean("available") }) return TaskResult(TaskStatus.PENDING, "今日可以签到")
             // A valid but all-unavailable calendar may also be a guest/role error. Require an actual
             // server record for today before reporting ALREADY; empty data is never success.
-            val currentTs = stringValue(data, "currentTs").toLongOrNull()
-            val records = data.optJSONArray("records")
-            if (currentTs != null && records != null) {
-                val today = java.time.Instant.ofEpochSecond(currentTs).atZone(java.time.ZoneId.of("Asia/Shanghai")).toLocalDate()
-                val signed = (0 until records.length()).mapNotNull { records.optJSONObject(it) }
-                    .mapNotNull { stringValue(it, "ts").toLongOrNull() }.any {
-                        java.time.Instant.ofEpochSecond(it).atZone(java.time.ZoneId.of("Asia/Shanghai")).toLocalDate() == today
-                    }
-                if (signed) return TaskResult(TaskStatus.ALREADY, "今日已签到")
-            }
+            val today = attendanceDate(data, "currentTs")
+            val records = todayRecords(data, today)
+            if (records.isNotEmpty()) return signedToday(data, today, records, endfield = false)
             return TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", diagnostic(kind, response))
+        }
+
+        private fun attendanceDate(data: JSONObject, field: String): LocalDate? {
+            val timestamp = stringValue(data, field).toLongOrNull() ?: return null
+            return try { Instant.ofEpochSecond(timestamp).atZone(attendanceZone).toLocalDate() }
+            catch (_: DateTimeException) { null }
+        }
+
+        private fun objects(array: JSONArray?): List<JSONObject> =
+            if (array == null) emptyList() else (0 until array.length()).mapNotNull { array.optJSONObject(it) }
+
+        private fun todayRecords(data: JSONObject, today: LocalDate?): List<JSONObject> =
+            if (today == null) emptyList() else objects(data.optJSONArray("records")).filter { attendanceDate(it, "ts") == today }
+
+        private fun signedToday(data: JSONObject, today: LocalDate?, records: List<JSONObject>, endfield: Boolean): TaskResult {
+            val result = TaskResult(TaskStatus.ALREADY, "今日已签到")
+            val resources = data.optJSONObject("resourceInfoMap")
+            val calendar = objects(data.optJSONArray("calendar"))
+            val datedClaims = if (today == null) emptyList() else calendar.filter {
+                it.opt("done") == true && (attendanceDate(it, "ts") == today || it.opt("date") == today.toString())
+            }
+            val awards = records.flatMap { mappedAwards(it, resources) }
+                .ifEmpty { datedClaims.flatMap { mappedAwards(it, resources) } }
+                .ifEmpty { mappedAwards(data.optJSONArray("awardIds"), resources) }
+                .ifEmpty {
+                    if (endfield) latestEndfieldClaim(calendar)?.let { mappedAwards(it, resources) }.orEmpty()
+                    else emptyList()
+                }
+            return if (awards.isEmpty()) result.withUnrecognizedStats(listOf(
+                "records", "calendar", "ts", "date", "done", "awardIds", "awardId", "resourceId", "resourceInfoMap", "id", "name", "count"
+            )) else withAwards(result, awards)
+        }
+
+        private fun latestEndfieldClaim(calendar: List<JSONObject>): JSONObject? {
+            val daily = calendar.filter { it.opt("type") == "daily" }
+            if (daily.any { it.has("ts") || it.has("date") || it.opt("done") !is Boolean }) return null
+            // After hasToday=true, the last slot in an uninterrupted sequence of completed daily slots is today's claim.
+            val completed = daily.takeWhile { it.opt("done") == true }
+            if (daily.drop(completed.size).any { it.opt("done") == true }) return null
+            return completed.lastOrNull()
+        }
+
+        private fun mappedAwards(entry: JSONObject, resources: JSONObject?): List<String> {
+            val id = stringValue(entry, "resourceId").ifBlank { stringValue(entry, "awardId") }
+            return mappedAwards(entry.optJSONArray("awardIds"), resources).ifEmpty {
+                listOfNotNull(mappedAward(resources, id, entry.statLong("count")))
+            }
+        }
+
+        private fun mappedAwards(ids: JSONArray?, resources: JSONObject?): List<String> {
+            if (ids == null || resources == null) return emptyList()
+            return (0 until ids.length()).mapNotNull { index ->
+                val item = ids.optJSONObject(index)
+                val id = if (item == null) {
+                    when (val value = ids.opt(index)) {
+                        is String, is Number -> value.toString()
+                        else -> ""
+                    }
+                } else stringValue(item, "id").ifBlank { stringValue(item, "resourceId") }
+                mappedAward(resources, id, item?.statLong("count"))
+            }
+        }
+
+        private fun mappedAward(resources: JSONObject?, id: String, count: Long?): String? {
+            val resource = resources?.optJSONObject(id.takeIf { it.isNotBlank() } ?: return null) ?: return null
+            return awardText(resource, count ?: resource.statLong("count"))
+        }
+
+        private fun awardText(resource: JSONObject?, count: Number?): String? {
+            val name = resource?.let { stringValue(it, "name") }.orEmpty()
+            return if (name.isNotBlank() && count != null) "$name ×$count" else null
+        }
+
+        private fun withAwards(result: TaskResult, awards: List<String>): TaskResult {
+            val text = awards.joinToString("、")
+            val value = if (text.length <= 40) text else text.take(39).trimEnd('、').dropLastWhile { it.isHighSurrogate() } + "…"
+            return result.copy(stats = listOf(Stat("今日奖励", value)))
         }
 
         internal fun parseAttendanceResult(kind: String, response: JSONObject): TaskResult {
@@ -340,30 +417,23 @@ class SklandAdapter internal constructor(
             }
             val data = response.optJSONObject("data")
                 ?: return TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", diagnostic(kind, response))
-            val awards = mutableListOf<String>()
-            if (kind == ARK) {
+            val awards = if (kind == ARK) {
                 val list = data.optJSONArray("awards") ?: return TaskResult(TaskStatus.UNKNOWN, "签到奖励未确认", diagnostic(kind, response))
-                for (i in 0 until list.length()) {
-                    val item = list.optJSONObject(i) ?: continue
-                    val name = item.optJSONObject("resource")?.let { stringValue(it, "name") }.orEmpty()
-                    val count = item.opt("count") as? Number
-                    if (name.isNotBlank() && count != null) awards += "$name ×$count"
+                objects(list).mapNotNull { item ->
+                    awardText(item.optJSONObject("resource"), item.opt("count") as? Number)
                 }
             } else if (kind == ENDFIELD) {
                 val ids = data.optJSONArray("awardIds")
                 val resources = data.optJSONObject("resourceInfoMap")
                 if (ids == null || resources == null || stringValue(data, "ts").isBlank())
                     return TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", diagnostic(kind, response))
-                for (i in 0 until ids.length()) {
-                    val id = ids.optJSONObject(i)?.let { stringValue(it, "id") }.orEmpty()
-                    val item = resources.optJSONObject(id) ?: continue
-                    val name = stringValue(item, "name")
-                    val count = item.opt("count") as? Number
-                    if (name.isNotBlank() && count != null) awards += "$name ×$count"
+                objects(ids).mapNotNull { award ->
+                    val item = resources.optJSONObject(stringValue(award, "id")) ?: return@mapNotNull null
+                    awardText(item, item.opt("count") as? Number)
                 }
             } else return TaskResult(TaskStatus.NOT_CONNECTED, "不支持的森空岛任务")
             if (awards.isEmpty()) return TaskResult(TaskStatus.UNKNOWN, "签到奖励未确认", diagnostic(kind, response))
-            return TaskResult(TaskStatus.SUCCESS, "签到成功，获得 ${awards.joinToString("、")}", diagnostic(kind, response))
+            return withAwards(TaskResult(TaskStatus.SUCCESS, "签到成功", diagnostic(kind, response)), awards)
         }
 
         private fun checkedData(response: JSONObject, field: String, stage: String): JSONObject {

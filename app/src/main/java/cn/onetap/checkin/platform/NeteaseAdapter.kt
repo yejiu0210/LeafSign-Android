@@ -13,6 +13,7 @@ import java.security.spec.X509EncodedKeySpec
 import java.net.URLEncoder
 import java.util.Base64
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -26,9 +27,18 @@ class NeteaseAdapter internal constructor(
     override val maxTargetConcurrency = 1
     private val net = NetClient(setOf("music.163.com", "interfacepc.music.163.com"))
     private val deviceId = UUID.randomUUID().toString().replace("-", "")
+    private val accountStats = ConcurrentHashMap<String, ConcurrentHashMap<String, StatsRead>>()
+
+    private data class StatsRead(val stats: List<Stat> = emptyList(), val unrecognized: List<String> = emptyList())
 
     override fun validate(credential: String): Identity {
-        val cookie = credentials(credential)
+        val identity = validateAccount(credentials(credential))
+        // Runner validates each account before starting its targets. Internal ownership checks keep that cache.
+        accountStats[identity.userId] = ConcurrentHashMap()
+        return identity
+    }
+
+    private fun validateAccount(cookie: Map<String, String>): Identity {
         val result = request("/nuser/account/get", JSONObject(), cookie)
         val code = code(result)
         if (code != 200) throw rejection(result)
@@ -52,12 +62,12 @@ class NeteaseAdapter internal constructor(
         if (isYunbeiTarget(target)) return executeYunbei(credential, target)
         if (!isVipTarget(target))
             return TaskResult(TaskStatus.UNKNOWN, "不支持此签到任务")
-        val identity = validate(credential)
+        val cookie = credentials(credential)
+        val identity = validateAccount(cookie)
         if (target.metadata["ownerUserId"] != identity.userId)
             return TaskResult(TaskStatus.EXPIRED, "凭证对应账号已改变，请重新校验账号并选择任务")
-        val cookie = credentials(credential)
         val before = readVipState(cookie)
-        if (before.status != TaskStatus.PENDING) return before
+        if (before.status != TaskStatus.PENDING) return withVipStats(before, cookie, identity.userId)
 
         // Both operations are necessary in the documented black-vinyl music-sign flow.
         // The history/detail operation is intentionally NOT used by query(): it participates in signing.
@@ -72,7 +82,7 @@ class NeteaseAdapter internal constructor(
 
         // A successful request chain is insufficient. Only today's explicit server flag completes it.
         val after = checkAfterSign { readVipState(cookie) }
-        return when (after?.status) {
+        val result = when (after?.status) {
             TaskStatus.ALREADY -> if(code(detail)==200) TaskResult(TaskStatus.SUCCESS, "签到成功",
                 "netease vipMusicSign code=$taskCode; detail code=200")
                 else TaskResult(TaskStatus.ALREADY, "今日已签到",
@@ -82,20 +92,24 @@ class NeteaseAdapter internal constructor(
             null -> TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试")
             else -> after
         }
+        return withVipStats(result, cookie, identity.userId)
     }
 
     override fun query(credential: String, target: Target): TaskResult? {
         if (isYunbeiTarget(target)) {
             if (!target.bound) return TaskResult(TaskStatus.UNBOUND,"云贝任务未绑定")
-            if (validate(credential).userId != target.metadata["ownerUserId"])
+            val cookie = credentials(credential)
+            val identity = validateAccount(cookie)
+            if (identity.userId != target.metadata["ownerUserId"])
                 return TaskResult(TaskStatus.EXPIRED,"凭证对应账号已改变，请重新校验账号并选择任务")
-            return readYunbeiState(credentials(credential))
+            return readYunbeiState(cookie)?.let { withYunbeiStats(it, cookie, identity.userId) }
         }
         if (!isVipTarget(target)) return TaskResult(TaskStatus.UNKNOWN, "不支持此签到任务")
-        val identity = validate(credential)
+        val cookie = credentials(credential)
+        val identity = validateAccount(cookie)
         if (target.metadata["ownerUserId"] != identity.userId)
             return TaskResult(TaskStatus.EXPIRED, "凭证对应账号已改变，请重新校验账号并选择任务")
-        return readVipState(credentials(credential))
+        return withVipStats(readVipState(cookie), cookie, identity.userId)
     }
 
     private fun readVipState(cookie: Map<String, String>): TaskResult = parseVipState(request(
@@ -103,19 +117,78 @@ class NeteaseAdapter internal constructor(
 
     private fun executeYunbei(credential: String, target: Target): TaskResult {
         if (!target.bound) return TaskResult(TaskStatus.UNBOUND,"云贝任务未绑定")
-        if (validate(credential).userId != target.metadata["ownerUserId"])
-            return TaskResult(TaskStatus.EXPIRED,"凭证对应账号已改变，请重新校验账号并选择任务")
         val cookie = credentials(credential)
+        val identity = validateAccount(cookie)
+        if (identity.userId != target.metadata["ownerUserId"])
+            return TaskResult(TaskStatus.EXPIRED,"凭证对应账号已改变，请重新校验账号并选择任务")
         val before = readYunbeiState(cookie)
-        if (before != null && before.status != TaskStatus.PENDING) return before
+        if (before != null && before.status != TaskStatus.PENDING)
+            return withYunbeiStats(before, cookie, identity.userId)
         val result = parseYunbeiSign(yunbeiRequest("/pointmall/user/sign", cookie))
-        if (result.status != TaskStatus.SUCCESS) return result
+        if (result.status != TaskStatus.SUCCESS) return withYunbeiStats(result, cookie, identity.userId)
         val after = checkAfterSign { readYunbeiState(cookie) }
-        return when (after?.status) {
+        val confirmed = when (after?.status) {
             TaskStatus.PENDING -> TaskResult(TaskStatus.UNKNOWN,"结果未确认，请稍后重试")
             null, TaskStatus.ALREADY -> result
             else -> after
         }
+        return withYunbeiStats(confirmed, cookie, identity.userId)
+    }
+
+    private fun withVipStats(result: TaskResult, cookie: Map<String, String>, uid: String): TaskResult =
+        withStats(result, cookie, uid, "/vipnewcenter/app/level/growhpoint/basic", ::parseVipStats)
+
+    private fun withYunbeiStats(result: TaskResult, cookie: Map<String, String>, uid: String): TaskResult =
+        withStats(result, cookie, uid, "/v1/user/info", ::parseYunbeiStats)
+
+    private fun withStats(result: TaskResult, cookie: Map<String, String>, uid: String, path: String,
+        parse: (JSONObject) -> StatsRead): TaskResult {
+        if (result.status != TaskStatus.SUCCESS && result.status != TaskStatus.ALREADY) return result
+        val cache = accountStats.computeIfAbsent(uid) { ConcurrentHashMap() }
+        val read = cache.computeIfAbsent(path) {
+            try {
+                val response = request(path, JSONObject(), cookie)
+                if (code(response) == 200) parse(response) else StatsRead()
+            } catch (e: IOException) {
+                if (Thread.currentThread().isInterrupted) throw e
+                StatsRead()
+            } catch (_: AdapterException) {
+                StatsRead()
+            } catch (_: JSONException) {
+                StatsRead()
+            }
+        }
+        val withStats = result.copy(stats = read.stats)
+        return if (read.unrecognized.isEmpty()) withStats else withStats.withUnrecognizedStats(read.unrecognized)
+    }
+
+    private fun parseVipStats(response: JSONObject): StatsRead {
+        val data = response.optJSONObject("data")
+        val card = data?.optJSONObject("levelCard")
+        val sources = listOfNotNull(data?.optJSONObject("userLevel"), card?.optJSONObject("userLevel"), card, data)
+        fun firstNumber(fields: List<String>): Long? =
+            sources.firstNotNullOfOrNull { item -> fields.firstNotNullOfOrNull(item::statLong) }
+
+        val levelFields = listOf("level", "vipLevel", "currentLevel")
+        val growthFields = listOf("growthPoint", "currentGrowthPoint", "growPoint")
+        val nextFields = listOf("nextLevelGrowthPoint", "nextGrowthPoint", "nextLevelPoint", "nextLevelNeedGrowthPoint")
+        val level = firstNumber(levelFields)
+        val growth = firstNumber(growthFields)
+        val next = firstNumber(nextFields)
+        val stats = listOfNotNull(
+            level?.let { Stat("黑胶等级", "V$it") },
+            growth?.let { progressStat("成长值", it, next) ?: Stat("成长值", it.toString()) }
+        )
+        return StatsRead(stats, if (stats.isEmpty()) levelFields + growthFields + nextFields else emptyList())
+    }
+
+    private fun parseYunbeiStats(response: JSONObject): StatsRead {
+        val data = response.optJSONObject("data")
+        val balance = response.optJSONObject("userPoint")?.statLong("balance")
+            ?: data?.optJSONObject("userPoint")?.statLong("balance")
+            ?: response.statLong("pointsBalance") ?: data?.statLong("pointsBalance")
+        return if (balance == null) StatsRead(unrecognized = listOf("balance", "pointsBalance"))
+        else StatsRead(listOf(Stat("云贝", balance.toString())))
     }
 
     private fun checkAfterSign(read: () -> TaskResult?): TaskResult? {

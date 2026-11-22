@@ -39,7 +39,8 @@ class BilibiliBigPointTest {
 
     @Test fun queryUsesOfficialParametersAndOnlyBooleanSignedWithNumericBalance() {
         val api=Api(state(true));val result=api.adapter.query(credential,target)
-        assertEquals(TaskStatus.ALREADY,result?.status);assertEquals("今日已签到，当前大积分 42",result?.message)
+        assertEquals(TaskStatus.ALREADY,result?.status);assertEquals("今日已签到",result?.message)
+        assertEquals(listOf(Stat("大积分", "42")), result?.stats)
         val request=api.calls.last();val url=request.url.toHttpUrl()
         assertEquals("/x/vip/vip_center/sign_in/three_days_sign",url.encodedPath)
         for((key,value) in mapOf("csrf" to "fixture-csrf","mobi_app" to "android","platform" to "android","build" to "8451100","disable_rcmd" to "0"))assertEquals(value,url.queryParameter(key))
@@ -63,6 +64,7 @@ class BilibiliBigPointTest {
         val result=api.adapter.execute(credential,target)
         assertEquals(TaskStatus.SUCCESS,result.status)
         assertEquals("大积分签到成功，获得 5 积分，连续签到 2/3 天",result.message)
+        assertEquals(listOf(Stat("大积分", "42")), result.stats)
         val write=api.writes.single();val url=write.url.toHttpUrl()
         assertEquals("/pgc/activity/score/task/sign2",url.encodedPath)
         assertEquals("android",url.queryParameter("mobi_app"));assertEquals("fixture-csrf",url.queryParameter("csrf"));assertEquals("android",url.queryParameter("platform"))

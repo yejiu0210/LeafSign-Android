@@ -114,7 +114,7 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
                 if (known != null && known.status != TaskStatus.PENDING) known
                 else if(known==null && priorCompletion) {
                     if(freshCheckRequired) TaskResult(TaskStatus.UNKNOWN,"本次签到自检未能确认；保留历史记录，未重复发送签到，请稍后重试自检")
-                    else TaskResult(prior!!.status,"当前本地周期内已确认完成；平台无可靠只读查询，未重复发送",prior.diagnostic,prior.experienceState)
+                    else TaskResult(prior!!.status,"当前本地周期内已确认完成；平台无可靠只读查询，未重复发送",prior.diagnostic,prior.experienceState,stats=prior.stats)
                 } else executeWithReconciliation(adapter,account,target)
             } catch(e: CancellationException) {
                 finish(record,TaskResult(TaskStatus.INTERRUPTED,"任务被中断，结果待确认"))
@@ -186,7 +186,20 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
     private suspend fun <T> readWithRetry(action: () -> T): T {
         try { return runInterruptible(Dispatchers.IO) { action() } } catch (_: IOException) { delay(900); return runInterruptible(Dispatchers.IO) { action() } }
     }
-    private fun finish(record: Record,result: TaskResult) { store.update { s -> s.copy(records=s.records.map { if(it.id==record.id) it.copy(status=result.status,message=result.message,diagnostic=result.diagnostic,experienceState=result.experienceState) else it }) } }
+    private fun finish(record: Record, result: TaskResult) {
+        val stats = result.stats.map { it.copy(label = it.label.take(40), value = it.value.take(40)) }
+        store.update { state ->
+            state.copy(records = state.records.map {
+                if (it.id == record.id) it.copy(
+                    status = result.status,
+                    message = result.message,
+                    diagnostic = result.diagnostic,
+                    experienceState = result.experienceState,
+                    stats = stats
+                ) else it
+            })
+        }
+    }
     private fun failure(e: Exception, credential: String) = when(e) {
         is AdapterException -> TaskResult(e.status,Rules.safeMessage(e.message,credential),Rules.safeDiagnostic(e.diagnostic))
         is IOException -> TaskResult(TaskStatus.FAILED,"网络连接失败，请检查网络后重试","exception=${e.javaClass.simpleName}")
