@@ -10,8 +10,8 @@ android {
         applicationId = "cn.onetap.checkin"
         minSdk = 26
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.5.7"
+        versionCode = 18
+        versionName = "0.5.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true; aidl = true }

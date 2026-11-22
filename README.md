@@ -1,8 +1,10 @@
 <div align="center">
 
+<img src="docs/assets/icon.png" alt="一叶签图标" width="112">
+
 <img src="docs/assets/banner.svg" alt="一叶签（LeafSign）：一个按钮完成每日签到" width="100%">
 
-个人使用的原生 Android 签到应用：网易云音乐、百度贴吧、森空岛、哔哩哔哩，一个按钮完成每日任务。
+个人使用的原生 Android 签到应用：网易云音乐、百度贴吧、森空岛、哔哩哔哩、小黑盒，扫码登录，一个按钮完成每日任务。
 
 ![Android](https://img.shields.io/badge/Android-8.0+-34A853?style=flat-square&logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1.20-7F52FF?style=flat-square&logo=kotlin&logoColor=white)
@@ -20,13 +22,13 @@
 
 Kotlin / Jetpack Compose，Android 8.0（API 26）以上。
 
-> 「一叶签」原名「一键签到」，取自作者名字里的「葉」。包名 `cn.onetap.checkin` 与仓库名沿用旧称，不影响覆盖升级。
+> 「一叶签」原名「一键签到」，取自作者名字里的「葉」。包名 `cn.onetap.checkin` 与仓库名沿用旧称，不影响覆盖升级。图标里的「叶子精灵」由 NovelAI 绘制。
 
 ## 当前状态
 
 | 当前版本 | 下载 | 验证状态 |
 | --- | --- | --- |
-| **0.5.2**（versionCode 12） | [Releases](https://github.com/yejiu0210/one-tap-checkin-android/releases)（私有仓库，需有权限的账号登录） | 单元测试 316 项通过、Lint 无错误（2026-11-14）；并发签到、准点定时、Shizuku 守护、扫码登录与云贝 / 大积分签到待本人真机验收。0.4.5 及之前的验证见 [verification.md](docs/verification.md) |
+| **0.5.8**（versionCode 18） | [Releases](https://github.com/yejiu0210/one-tap-checkin-android/releases)（私有仓库，需有权限的账号登录） | 单元测试 357 项通过、Lint 无错误（2026-11-22）。本人真机已确认：零点定时签到配合失败自动重试可以正常完成、小黑盒扫码登录成功。0.4.5 及之前的验证见 [verification.md](docs/verification.md) |
 
 ## 支持平台
 
@@ -35,6 +37,7 @@ Kotlin / Jetpack Compose，Android 8.0（API 26）以上。
 | 网易云音乐 | 「黑胶乐签」（两步请求后需服务端今日状态确认）；「云贝签到」 | 黑胶乐签资格以官方为准，不引导购买会员；云贝签到任何账号可用 | [netease-vip](docs/integration-netease-vip.md) |
 | 百度贴吧 | 已选关注吧签到 + 服务端自检；可选每吧每日随机点赞一帖 | — | [签到](docs/integration-music-tieba.md) · [点赞](docs/integration-tieba-like.md) |
 | 森空岛 | 明日方舟、明日方舟：终末地每日签到，支持主账号 + 分身多账号、按角色和区服选择 | 已绑定游戏角色 | [skland](docs/integration-skland.md) |
+| 小黑盒 | 每日签到（签到前查任务中心，签到后复查） | 用小黑盒 App 扫码登录（不提供网页登录） | [heybox](docs/integration-heybox.md) |
 | 哔哩哔哩 | [会员中心等级加速包](https://big.bilibili.com/mobile/index?location=drawExperienceModule)；大会员「大积分」每日签到 | 有效大会员；等级加速包另需 LV1 以上、**手动在官方观看视频一分钟** | [bilibili](docs/integration-bilibili.md) |
 
 > [!NOTE]
@@ -49,13 +52,14 @@ Kotlin / Jetpack Compose，Android 8.0（API 26）以上。
 
 **添加账号**
 
-1. 打开「账号 → 添加账号」，选择平台、填写备注，点「用官方 App 扫码登录（推荐）」，再点「打开 App 确认登录」，在官方 App（可选分身）里确认；跳转不了时二维码会存进相册，在 App 的「扫一扫 → 相册」里选图即可。也可以用备用的「官方网页登录并自动导入」。
+1. 打开「账号 → 添加账号」，选择平台、填写备注，点「用官方 App 扫码登录（推荐）」，再点「打开 App 确认登录」，在官方 App（可选分身）里确认；跳转不了时二维码会存进相册，在 App 的「扫一扫 → 相册」里选图即可。除小黑盒外，也可以用备用的「官方网页登录并自动导入」。
 2. 在内嵌官网完成登录和官方验证码，检测到授权后会自动校验并保存。如果没有自动返回，点「登录完成，检测账号」。
 3. 保存后核对昵称、ID、角色或关注的贴吧。同一平台 ID 不能重复添加。
 
 **各平台说明**
 
 - **森空岛**：打开官方鹰角账号中心。主账号和分身账号分别添加（备注「主账号」「分身账号」），两个账号应显示不同的森空岛 ID。展开各账号选择方舟、终末地的具体角色及区服；未绑定的游戏显示「未绑定」，不算失败。
+- **小黑盒**：只支持扫码登录（0.4.x 的网页登录在手机上一直不稳定，已移除），也可以在备用入口手动导入 `heybox_id` 和 `pkey`。小黑盒每次校验身份都会换发新的 pkey，应用会自动保存最新值，不需要手动更新。
 - **贴吧签到**：可全选或只勾选需要签到的吧。提交后会读取同账号、同吧的当日签到状态，自检通过才显示「签到成功 / 今日已签到」；自检缺项、不可用或仍显示未签时保留「结果待确认」，可稍后重试。
 - **贴吧点赞**：旧账号先点「校验 / 刷新」，再勾选各吧的「随机点赞一帖」或点「全选随机一赞」。每个吧每天选一帖，默认关闭；已赞则取消一次再赞，超时保留同帖进度，最多两次尝试。「取消全部随机一赞」只关闭本账号的点赞任务，不撤销已点的赞，也不改变签到勾选或历史。
 
@@ -68,6 +72,7 @@ Kotlin / Jetpack Compose，Android 8.0（API 26）以上。
 | 备注 / 更新凭证 | 登录失效时重新走官方网页登录。只能更新为同一平台身份，换账号请另外添加；手动导入在备用入口，凭证留空表示保留原值 |
 | 退出本地授权 | 清除本地凭证并停用任务，保留历史 |
 | 删除账号和记录 | 删除该账号全部本地数据（不会注销官方 App 的会话） |
+| 设置 → 失败后自动重试 | 定时签到有失败项时，5 分钟后自动只重跑这些项，每天最多 3 次 |
 | 设置 → 外观 | 跟随系统 / 浅色 / 深色，即时保存；官网网页使用系统 WebView 的深色支持，实际配色由官网决定 |
 
 ## 凭证与隐私
@@ -85,6 +90,7 @@ Kotlin / Jetpack Compose，Android 8.0（API 26）以上。
 - **网易云音乐**：在 `https://music.163.com/` 登录，从桌面浏览器 Cookies 获取 `MUSIC_U` 和可选 `__csrf`。旧网易云账号升级后需点「校验 / 刷新」并勾选新任务；旧的普通签到记录会保留，但不会算作乐签完成。
 - **贴吧**：在 `https://tieba.baidu.com/` 登录，复制 Cookie 里的 `BDUSS`。可以粘贴完整 Cookie，适配器只取 `BDUSS` 和可选的 `STOKEN`；保存时会刷新关注列表。网页 Cookie 被风控时先在官方完成验证再更新。
 - **森空岛**：首选应用内 `https://user.hypergryph.com/login` 官方账号中心，登录后从官方 SDK 读取本次会话的通行证 token，再换取森空岛凭证并校验角色，各账号单独登录。已有本人官方 token 或 `{"cred":"官方cred"}` 时可在备用入口输入，设备标识等高级格式见接入文档。旧的 `web-api.skland.com/account/info/hg` 与账号中心不是同一个站点会话，不要混用。
+- **小黑盒**：在 `https://www.xiaoheihe.cn/` 登录，从 Cookies 复制 `heybox_id` 和 `pkey`，格式为 `heybox_id=…; pkey=…`。
 - **B 站**：在 `https://www.bilibili.com/` 登录，复制 `SESSDATA` 和 `bili_jct`，格式为 `SESSDATA=…; bili_jct=…`，可以带上 `DedeUserID`。
 
 在电脑上拿到凭证后，用你信任的个人方式传到手机，避免公共剪贴板、公共文档和第三方抓包服务，用完可清空剪贴板。凭证有效期由平台决定，没有保证长期有效的刷新机制；森空岛会用通行证 token 重新获取短期 cred / 签名 token。
@@ -106,6 +112,7 @@ Kotlin / Jetpack Compose，Android 8.0（API 26）以上。
 - **多层保障**：精确闹钟到点唤醒（默认「闹钟模式」，状态栏会有闹钟图标）→ 前台服务执行，通知栏显示进度并保留结果；开机、应用更新、修改系统时间后自动重排，错过时间会补跑当天；每小时一次的备份任务兜底。多个触发同时到达时只执行一次。
 - **准点运行检查**（设置页）：精确闹钟权限、忽略电池优化、通知权限、厂商自启动 / 后台运行。可用「1 分钟后测试一次」验证整条链路，并查看最近 20 次触发记录。
 - **Shizuku 增强（推荐国产 ROM 使用）**：安装并启动 [Shizuku](https://shizuku.rikka.app/zh-hans/) 后授权本应用，可「一键保活」，并开启「Shizuku 守护唤醒」——在 Shizuku 进程中常驻定时器，应用被杀或被强行停止后到点仍会拉起签到。手机重启后需在 Shizuku 中重新启动服务（已 Root 的设备会自动启动）。
+- **失败后自动重试**（默认开启）：定时签到结束后如果还有失败、待确认或中断的项，5 分钟后只重跑这些项，每天最多 3 次。主要应对零点高峰时贴吧大面积 HTTP 302；需要人工验证或登录失效的项不重试。
 - 后台只补跑当天，不补历史，不消耗补签资源。
 
 ## 构建
