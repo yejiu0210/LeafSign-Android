@@ -8,15 +8,15 @@
 
 网易云音乐 · 百度贴吧 · 森空岛 · 哔哩哔哩 · 小黑盒
 
-[![Release](https://img.shields.io/github/v/release/yejiu0210/LeafSign-Android?include_prereleases&style=flat-square&color=7C6CF0&label=下载)](https://github.com/yejiu0210/LeafSign-Android/releases)
+[![Release](https://img.shields.io/github/v/release/yejiu0210/LeafSign-Android?style=flat-square&color=7C6CF0&label=最新版本)](https://github.com/yejiu0210/LeafSign-Android/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/yejiu0210/LeafSign-Android/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/yejiu0210/LeafSign-Android/actions/workflows/ci.yml)
 ![Android](https://img.shields.io/badge/Android-8.0+-34A853?style=flat-square&logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Compose-7F52FF?style=flat-square&logo=kotlin&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-F59E0B?style=flat-square)
-[![Stars](https://img.shields.io/github/stars/yejiu0210/LeafSign-Android?style=flat-square&color=5468EE)](https://github.com/yejiu0210/LeafSign-Android/stargazers)
 
 <img src="docs/assets/banner.svg" alt="一叶签：扫码登录，一个按钮完成每日签到" width="100%">
 
-[功能](#功能) · [支持的平台](#支持的平台) · [快速上手](#快速上手) · [常见问题](#常见问题) · [隐私与安全](#隐私与安全) · [自行构建](#自行构建) · [更新记录](docs/CHANGELOG.md)
+[功能](#功能) · [支持的平台](#支持的平台) · [快速上手](#快速上手) · [常见问题](#常见问题) · [隐私与安全](#隐私与安全) · [技术架构](#技术架构) · [自行构建](#自行构建) · [更新记录](docs/CHANGELOG.md)
 
 </div>
 
@@ -111,6 +111,27 @@
 - **凭证加密保存**：用 Android Keystore 密钥加密存在本地，禁用了系统备份和明文 HTTP。
 - **扫码和网页登录都走官方**：密码、短信、验证码都由官方页面或官方 App 处理；一叶签不读取原版或分身 App 的私有文件。
 - **退出和删除**：账号页可以随时「退出本地授权」（清除凭证、保留记录）或「删除账号和记录」。
+
+## 技术架构
+
+纯 Kotlin + Jetpack Compose（Material 3），单 Activity，没有后端服务。代码按职责分成五个包：
+
+```
+cn.onetap.checkin
+├── ui/        Compose 界面：今日、账号、记录、设置，以及扫码登录和贴吧详情页
+├── core/      执行器 Runner、加密存储 Store、结果与数据模型
+├── platform/  各平台适配器：网易云、贴吧（签到 / 点赞）、森空岛、B 站、小黑盒
+├── login/     扫码登录（各平台 QR 协议）和官方网页登录
+└── sched/     定时调度：精确闹钟、前台服务、WorkManager、Shizuku 守护、失败重试
+```
+
+**几个关键设计**
+
+- **统一的适配器接口**：每个平台实现 `validate`（校验身份）、`query`（只读查询今日状态）、`execute`（签到）三步。执行器总是先查再签、签完再查，只有平台明确返回「已完成」才记为成功；结果说不清时记为「未确认」，不会盲目重发写请求。
+- **并发与节流**：不同账号用协程并发执行，并发数由信号量控制，可在设置里调；同一账号内的任务按顺序执行。贴吧等容易触发风控的平台，同一账号的写请求之间有固定间隔。登录失效时会暂停该账号剩下的写操作，被要求验证时暂停同一组的后续操作，避免越操作越被风控。
+- **本地加密存储**：账号凭证、记录和设置整体用 AES-GCM 加密，密钥由 Android Keystore 生成和保管，不出设备；同时关闭了系统备份和明文 HTTP。
+- **多层定时保障**：`AlarmManager` 精确闹钟到点唤醒 → 前台服务执行并在通知栏显示进度 → WorkManager 每小时兜底补跑当天；可选通过 Shizuku（AIDL 守护进程）在应用被杀后仍按时拉起。定时签到有失败项时，另排独立的重试闹钟。
+- **断点安全**：贴吧点赞这类多步操作，每一步执行前先把进度存进加密的检查点；进程被杀或网络中断后，从检查点继续，不会重复点赞。
 
 ## 自行构建
 
