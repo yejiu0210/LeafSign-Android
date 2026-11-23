@@ -8,7 +8,7 @@
 
 网易云音乐 · 百度贴吧 · 森空岛 · 哔哩哔哩 · 小黑盒
 
-[![Release](https://img.shields.io/github/v/release/yejiu0210/LeafSign-Android?style=flat-square&color=7C6CF0&label=最新版本)](https://github.com/yejiu0210/LeafSign-Android/releases/latest)
+[![Release](https://img.shields.io/github/v/release/yejiu0210/LeafSign-Android?style=flat-square&color=7C6CF0&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/yejiu0210/LeafSign-Android/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/yejiu0210/LeafSign-Android/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/yejiu0210/LeafSign-Android/actions/workflows/ci.yml)
 ![Android](https://img.shields.io/badge/Android-8.0+-34A853?style=flat-square&logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-Compose-7F52FF?style=flat-square&logo=kotlin&logoColor=white)
