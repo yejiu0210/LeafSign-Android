@@ -19,10 +19,12 @@ class TiebaLikeTaskTest {
         override fun update(change:(AppState)->AppState):AppState { state=change(state);return state }
     }
     private inner class Api(private val owner:String=uid,private val candidateThread:String="20",initialForum:String="10") {
-        var liked=false
+        val likedThreads=mutableSetOf<String>()
+        var liked: Boolean
+            get()=candidateThread in likedThreads
+            set(value) { if(value) likedThreads.add(candidateThread) else likedThreads.remove(candidateThread) }
         var changeOnWrite=true
         var timeoutOnLike=false
-        var timeoutOnUnlike=false
         var unknownRead=false
         var writeError: Int?=null
         var responseOwner=owner
@@ -44,19 +46,21 @@ class TiebaLikeTaskTest {
                 "/c/f/pb/page" -> {
                     reads+=fields
                     JSONObject().put("error_code",0).put("user",user()).put("forum",JSONObject().put("id",responseForum))
-                        .put("thread",JSONObject().put("id",fields["kz"]).put("agree",JSONObject().apply { if(!unknownRead)put("has_agree",if(liked)1 else 0) }))
+                        .put("thread",JSONObject().put("id",fields["kz"]).put("agree",JSONObject().apply {
+                            if(!unknownRead)put("has_agree",if(fields["kz"] in likedThreads)1 else 0)
+                        }))
                         .also {onRead?.invoke(it,fields)}
                 }
                 "/c/c/agree/opAgree" -> {
                     onWrite?.invoke();writes+=fields
                     assertEquals("2",fields["agree_type"]);assertEquals("3",fields["obj_type"]);assertEquals("0",fields["post_id"])
+                    assertEquals("0",fields["op_type"])
                     assertFalse(fields.containsKey("content_type"))
                     assertEquals(TiebaLikeCodec.WRITE_VERSION,fields["_client_version"])
                     assertTrue(TiebaLikeCodec.validCuid(fields.getValue("cuid")))
                     writeError?.let { return JSONObject().put("error_code",it).put("error_msg","synthetic rejection") }
-                    val undo=fields["op_type"]=="1"
-                    if(changeOnWrite)liked=!undo
-                    if((undo&&timeoutOnUnlike)||(!undo&&timeoutOnLike))throw IOException("synthetic timeout")
+                    if(changeOnWrite)likedThreads.add(fields.getValue("thread_id"))
+                    if(timeoutOnLike)throw IOException("synthetic timeout")
                     JSONObject().put("error_code",0)
                 }
                 else -> error("Unexpected endpoint")
@@ -64,8 +68,8 @@ class TiebaLikeTaskTest {
         }
         private fun user()=JSONObject().put("is_login",1).put("id",responseOwner)
     }
-    private fun task(store:MemoryStore,api:Api)=TiebaLikeTask(store,api::call,{0})
-    @Test fun unlikeAndLikeUseTheSameFiveSecondAccountPace() {
+    private fun task(store:MemoryStore,api:Api,pause:(Long)->Unit={})=TiebaLikeTask(store,api::call,{0},pause=pause)
+    @Test fun likeSharesTheFiveSecondAccountPaceWithForumSign() {
         var now=0L
         val waits=mutableListOf<Long>()
         val adapter=TiebaAdapter(null,object:TiebaTransport {
@@ -73,12 +77,12 @@ class TiebaLikeTaskTest {
             override fun postForm(url:String,fields:Map<String,String>,headers:Map<String,String>):JSONObject=error("unused")
         },pause={waits+=it;now+=it},clock={now})
         val store=MemoryStore(AppState(accounts=listOf(account)))
-        val api=Api().apply {liked=true}
+        val api=Api()
         adapter.paceWrites(uid) // A preceding forum sign shares the very same account throttle.
         val task=TiebaLikeTask(store,api::call,{0},adapter::paceWrites)
         assertEquals(TaskStatus.SUCCESS,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
-        assertEquals(listOf(5000L,5000L),waits)
-        assertEquals(2,api.writes.size)
+        assertEquals(listOf(5000L),waits)
+        assertEquals(1,api.writes.size)
     }
     private fun checkpoint(stage:String,likes:Int=0,unlikes:Int=0,accountId:String=account.id,period:String=Rules.period(target)) =
         TaskCheckpoint(accountId,target.id,period,mapOf("threadId" to "20","forumId" to "10","forumName" to "测试","stage" to stage,
@@ -101,11 +105,9 @@ class TiebaLikeTaskTest {
         // Original MiniTiebaApi.opAgreeFlow@2885b2aa uses obj_type=3 for a thread.
         // Expected MD5s independently calculated by .NET over the documented raw field string.
         val post=TiebaLikeCodec.Post("20","10","测试")
-        for((undo,expected) in listOf(false to "86fa87b7a11be5c06b124dadf4ed6c15",true to "3a5cb6623b45ce47e5cda95f51eb11d3")) {
-            val fields=TiebaLikeCodec.writeFields(bduss,tbs,post,"06C7F37D41256F25FABA97B885DB6EFB|VAPUDW7TA",undo)
-            assertEquals("3",fields["obj_type"]);assertFalse(fields.containsKey("content_type"))
-            assertEquals(expected,TiebaAdapter.signedFields(fields)["sign"])
-        }
+        val fields=TiebaLikeCodec.writeFields(bduss,tbs,post,"06C7F37D41256F25FABA97B885DB6EFB|VAPUDW7TA")
+        assertEquals("3",fields["obj_type"]);assertEquals("0",fields["op_type"]);assertFalse(fields.containsKey("content_type"))
+        assertEquals("86fa87b7a11be5c06b124dadf4ed6c15",TiebaAdapter.signedFields(fields)["sign"])
     }
     @Test fun explicit300000RejectionNeverCompletesOrChangesTheSelectedThread() {
         val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {writeError=300000}
@@ -156,26 +158,6 @@ class TiebaLikeTaskTest {
             assertTrue(api.writes.isEmpty())
         }
     }
-    @Test fun rejectedLegacyUnlikeIsRepairedOnceThenCompletesTheRemainingLike() {
-        val store=MemoryStore(AppState(listOf(account),records=listOf(rejection()),checkpoints=listOf(checkpoint("unlike_sent",unlikes=1))))
-        val api=Api().apply {liked=true};val task=task(store,api)
-        assertEquals(TaskStatus.PENDING,task.query(uid,bduss,target)?.status)
-        assertEquals(TaskStatus.SUCCESS,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
-        assertEquals(listOf("1","0"),api.writes.map {it["op_type"]});assertEquals(setOf("20"),api.writes.map {it["thread_id"]}.toSet())
-        val saved=store.state.checkpoints.single().values
-        assertEquals("true",saved["repairUsed"]);assertEquals("2",saved["unlikeAttempts"]);assertEquals("1",saved["likeAttempts"])
-        assertEquals(TaskStatus.ALREADY,task.execute(uid,bduss,tbs,target,listOf(forum)).status);assertEquals(2,api.writes.size)
-    }
-    @Test fun failedCorrectedUnlikeIsCheckpointedBeforeWriteAndCannotBeRepeated() {
-        val store=MemoryStore(AppState(listOf(account),records=listOf(rejection()),checkpoints=listOf(checkpoint("unlike_sent",unlikes=1))))
-        val api=Api().apply {liked=true;changeOnWrite=false;timeoutOnUnlike=true};val task=task(store,api)
-        api.onWrite={ val saved=store.state.checkpoints.single().values
-            assertEquals("true",saved["repairUsed"]);assertEquals("obj_type",saved["agreeProtocol"]);assertEquals("2",saved["unlikeAttempts"]) }
-        try {task.execute(uid,bduss,tbs,target,listOf(forum));fail("timeout expected")}catch(_:IOException){}
-        assertEquals(TaskStatus.UNKNOWN,task.query(uid,bduss,target)?.status)
-        assertEquals(TaskStatus.UNKNOWN,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
-        assertEquals(listOf("1"),api.writes.map {it["op_type"]})
-    }
     @Test fun freshTaskIsOptInAndQueryDoesNotPretendYesterdaysLikeIsToday() {
         assertEquals("false",target.metadata["defaultEnabled"])
         val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {liked=true}
@@ -195,49 +177,117 @@ class TiebaLikeTaskTest {
         assertEquals(TaskStatus.ALREADY,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
         assertEquals(1,api.writes.size)
     }
-    @Test fun alreadyLikedThreadIsCancelledOnceThenLikedOnce() {
-        val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {liked=true}
-        api.onWrite={ val s=store.state.checkpoints.single().values;assertTrue(s["stage"] in setOf("unlike_sent","like_sent")) }
+    @Test fun selectionSkipsLikedAndDislikedThreads() {
+        val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {
+            liked=true
+            candidateThreads=listOf("20","21","22")
+            onRead={body,fields -> if(fields["kz"]=="21")body.getJSONObject("thread").getJSONObject("agree").put("agree_type",5)}
+        }
         assertEquals(TaskStatus.SUCCESS,task(store,api).execute(uid,bduss,tbs,target,listOf(forum)).status)
-        assertEquals(listOf("1","0"),api.writes.map {it["op_type"]})
-        assertEquals(setOf("20"),api.writes.map {it["thread_id"]}.toSet())
-        assertEquals("1",store.state.checkpoints.single().values["unlikeAttempts"])
+        assertEquals(listOf("22"),api.writes.map {it["thread_id"]})
+        assertEquals(listOf("20","21","22","22","22"),api.reads.map {it["kz"]})
+        assertTrue(api.liked)
+    }
+    @Test fun allCandidatesAlreadyLikedMeansNoWrites() {
+        val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {
+            candidateThreads=(20..31).map {it.toString()}
+            likedThreads.addAll(candidateThreads)
+        }
+        val result=task(store,api).execute(uid,bduss,tbs,target,listOf(forum))
+        assertEquals(TaskStatus.UNKNOWN,result.status)
+        assertEquals("测试吧暂无可用帖子，请稍后重试",result.message)
+        assertEquals(10,api.reads.size)
+        assertTrue(api.writes.isEmpty());assertTrue(store.state.checkpoints.isEmpty())
     }
     @Test fun likeTimeoutIsReconciledWithReadAndNeverSwitchesThread() {
         val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {timeoutOnLike=true}
         val task=task(store,api)
-        try {task.execute(uid,bduss,tbs,target,listOf(forum));fail("timeout expected")}catch(_:IOException){}
-        assertEquals("like_sent",store.state.checkpoints.single().values["stage"])
-        assertEquals(TaskStatus.SUCCESS,task.query(uid,bduss,target)?.status)
+        assertEquals(TaskStatus.SUCCESS,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals("complete",store.state.checkpoints.single().values["stage"])
+        assertEquals(TaskStatus.ALREADY,task.query(uid,bduss,target)?.status)
         assertEquals(1,api.writes.size)
         assertEquals(TaskStatus.ALREADY,task(store,api).execute(uid,bduss,tbs,target,listOf(forum)).status)
         assertEquals(1,api.writes.size)
     }
     @Test fun interruptedUnlikeResumesOnlyAfterReadConfirmsUnliked() {
         val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(checkpoint("unlike_sent",unlikes=1))))
-        val api=Api()
+        val api=Api().apply {onCandidates={fail("must restore the original like")}}
         val task=task(store,api)
         assertEquals(TaskStatus.PENDING,task.query(uid,bduss,target)?.status)
         assertEquals(TaskStatus.SUCCESS,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
         assertEquals(listOf("0"),api.writes.map {it["op_type"]})
+        assertEquals(listOf("20"),api.writes.map {it["thread_id"]})
     }
-    @Test fun unlikeTimeoutWithoutConfirmedUnlikedStateNeverCancelsAgain() {
-        val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {liked=true;changeOnWrite=false;timeoutOnUnlike=true}
-        val task=task(store,api)
-        try {task.execute(uid,bduss,tbs,target,listOf(forum));fail("timeout expected")}catch(_:IOException){}
-        assertEquals(TaskStatus.UNKNOWN,task.query(uid,bduss,target)?.status)
-        assertEquals(TaskStatus.UNKNOWN,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
-        assertEquals(listOf("1"),api.writes.map {it["op_type"]})
+    @Test fun interruptedUnlikeOnStillLikedThreadExcludesItAndLikesAnother() {
+        val old=checkpoint("unlike_sent",unlikes=1)
+        val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(old)))
+        val api=Api().apply {
+            liked=true
+            candidateThreads=listOf("20","21")
+            onCandidates={
+                val saved=store.state.checkpoints.single().values
+                assertEquals("unlike_sent",saved["stage"])
+                assertEquals("20",saved["excludedThreadIds"])
+                assertEquals("1",saved["replacementCount"])
+            }
+        }
+        assertEquals(TaskStatus.PENDING,task(store,api).query(uid,bduss,target)?.status)
+        assertEquals(old,store.state.checkpoints.single())
+        api.reads.clear()
+        assertEquals(TaskStatus.SUCCESS,task(store,api).execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals(listOf("21"),api.writes.map {it["thread_id"]})
+        assertEquals(listOf("20","21","21","21"),api.reads.map {it["kz"]})
+        assertTrue(api.liked)
     }
-    @Test fun confirmedUnlikedReadAllowsOnlySecondSameThreadLikeAttempt() {
+    @Test fun replacementLimitIsPersistedThroughFailedSearches() {
+        val store=MemoryStore(AppState(listOf(account),checkpoints=listOf(checkpoint("unlike_sent",unlikes=1))))
+        val api=Api().apply {liked=true}
+        var searches=0
+        api.onCandidates={searches++}
+        repeat(2) {
+            val result=task(store,api).execute(uid,bduss,tbs,target,listOf(forum))
+            assertEquals("测试吧暂无可用帖子，请稍后重试",result.message)
+        }
+        api.candidateThreads=listOf("20","21")
+        val result=task(store,api).execute(uid,bduss,tbs,target,listOf(forum))
+        assertEquals(TaskStatus.UNKNOWN,result.status)
+        assertEquals("点赞结果未确认，请稍后重试",result.message)
+        assertEquals("2",store.state.checkpoints.single().values["replacementCount"])
+        assertEquals("20",store.state.checkpoints.single().values["excludedThreadIds"])
+        assertEquals(2,searches)
+        assertTrue(api.writes.isEmpty())
+    }
+    @Test fun secondReadCanConfirmDelayedLikeWithoutAnotherWrite() {
         val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {changeOnWrite=false}
-        val task=task(store,api)
-        assertEquals(TaskStatus.UNKNOWN,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
-        assertEquals(TaskStatus.PENDING,task.query(uid,bduss,target)?.status)
-        assertEquals(TaskStatus.UNKNOWN,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
-        assertEquals(TaskStatus.UNKNOWN,task.query(uid,bduss,target)?.status)
-        assertEquals(TaskStatus.UNKNOWN,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
-        assertEquals(2,api.writes.size);assertEquals(setOf("20"),api.writes.map {it["thread_id"]}.toSet())
+        val waits=mutableListOf<Long>()
+        val task=task(store,api) { waits+=it;api.liked=true }
+        assertEquals(TaskStatus.SUCCESS,task.execute(uid,bduss,tbs,target,listOf(forum)).status)
+        assertEquals(listOf(800L),waits)
+        assertEquals(4,api.reads.size)
+        assertEquals(1,api.writes.size)
+    }
+    @Test fun unconfirmedLikeNeverResendsAfterFalseOrFailedReads() {
+        for(timeout in listOf(false,true)) {
+            val store=MemoryStore(AppState(listOf(account)))
+            val api=Api().apply {
+                changeOnWrite=false
+                timeoutOnLike=timeout
+                onRead={_,_ -> if(writes.isNotEmpty() && reads.size==3)throw IOException("synthetic read failure")}
+            }
+            val waits=mutableListOf<Long>()
+            val result=task(store,api,waits::add).execute(uid,bduss,tbs,target,listOf(forum))
+            assertEquals(TaskStatus.UNKNOWN,result.status)
+            assertEquals("点赞结果未确认，请稍后重试",result.message)
+            assertEquals(listOf(800L,1500L),waits)
+            assertEquals(5,api.reads.size)
+            val resumed=task(store,api)
+            assertEquals(TaskStatus.UNKNOWN,resumed.query(uid,bduss,target)?.status)
+            assertEquals(TaskStatus.UNKNOWN,resumed.execute(uid,bduss,tbs,target,listOf(forum)).status)
+            assertEquals(1,api.writes.size)
+            api.liked=true
+            assertEquals(TaskStatus.SUCCESS,resumed.query(uid,bduss,target)?.status)
+            assertEquals("complete",store.state.checkpoints.single().values["stage"])
+        }
     }
     @Test fun unknownReadNeverLeadsToMutation() {
         val store=MemoryStore(AppState(listOf(account)));val api=Api().apply {unknownRead=true}
@@ -321,7 +371,7 @@ class TiebaLikeTaskTest {
             onRead={body,_ -> body.getJSONObject("forum").put("id",0)}
             onCandidates={searches++;assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])}
         }
-        expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+        assertEquals(TaskStatus.UNKNOWN,task(store,api).execute(uid,bduss,tbs,target,listOf(forum)).status)
         assertEquals(1,searches);assertEquals(11,api.reads.size)
         assertEquals((20..30).map {it.toString()},api.reads.map {it["kz"]})
         expectStatus(TaskStatus.UNKNOWN){task(store,api).query(uid,bduss,target)}
@@ -388,7 +438,9 @@ class TiebaLikeTaskTest {
             candidateThreads=(20..31).map {it.toString()}
             onRead={body,_ -> body.put("error_code",4).put("error_msg","贴子可能已被删除").remove("thread")}
         }
-        expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+        val result=task(store,api).execute(uid,bduss,tbs,target,listOf(forum))
+        assertEquals(TaskStatus.UNKNOWN,result.status)
+        assertEquals("测试吧暂无可用帖子，请稍后重试",result.message)
         assertEquals((20..29).map {it.toString()},api.reads.map {it["kz"]})
         assertTrue(api.writes.isEmpty());assertTrue(store.state.checkpoints.isEmpty())
     }
@@ -418,7 +470,7 @@ class TiebaLikeTaskTest {
             onRead={body,_ -> body.put("error_code",4).put("error_msg","贴子可能已被删除").remove("thread")}
             onCandidates={searches++;assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])}
         }
-        expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+        assertEquals(TaskStatus.UNKNOWN,task(store,api).execute(uid,bduss,tbs,target,listOf(forum)).status)
         assertEquals(1,searches);assertEquals(11,api.reads.size)
         expectStatus(TaskStatus.UNKNOWN){task(store,api).query(uid,bduss,target)}
         expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
@@ -461,7 +513,8 @@ class TiebaLikeTaskTest {
                 candidateThreads=(20..31).map {it.toString()}
                 onRead={body,_ -> if(missing)body.remove("forum") else body.getJSONObject("forum").put("id",11)}
             }
-            expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+            if(missing) expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+            else assertEquals(TaskStatus.UNKNOWN,task(store,api).execute(uid,bduss,tbs,target,listOf(forum)).status)
             assertEquals(if(missing)1 else 10,api.reads.size)
             assertTrue(api.writes.isEmpty());assertTrue(store.state.checkpoints.isEmpty())
         }
@@ -503,7 +556,7 @@ class TiebaLikeTaskTest {
             onRead={body,_ -> body.getJSONObject("forum").put("id",11)}
             onCandidates={searches++;assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])}
         }
-        expectStatus(TaskStatus.UNKNOWN){task(store,api).execute(uid,bduss,tbs,target,listOf(forum))}
+        assertEquals(TaskStatus.UNKNOWN,task(store,api).execute(uid,bduss,tbs,target,listOf(forum)).status)
         assertEquals(1,searches);assertEquals("20",store.state.checkpoints.single().values["threadId"])
         assertEquals("true",store.state.checkpoints.single().values["candidateRepairUsed"])
         assertEquals(11,api.reads.size)
@@ -678,7 +731,7 @@ class TiebaLikeTaskTest {
                 assertFalse(TiebaLikeCodec.unavailableCandidate(e))
             }
         }
-        for(action in listOf("读取候选帖子","点赞","取消点赞")) {
+        for(action in listOf("读取候选帖子","点赞")) {
             try {TiebaLikeCodec.requireSuccess(JSONObject().put("error_code",4).put("error_msg","贴子可能已被删除"),action);fail("error expected")}
             catch(e:AdapterException) {assertEquals("tieba error_code=4",e.diagnostic);assertFalse(TiebaLikeCodec.unavailableCandidate(e))}
         }

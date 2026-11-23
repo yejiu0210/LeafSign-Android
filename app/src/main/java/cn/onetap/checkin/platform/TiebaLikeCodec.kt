@@ -60,6 +60,8 @@ internal object TiebaLikeCodec {
     fun unavailableCandidate(error: AdapterException): Boolean = error.status==TaskStatus.UNKNOWN &&
         Regex("tieba endpoint=pb_page reason=thread_unavailable thread_id=[1-9][0-9]{0,18} error_code=(?:4|350008)")
             .matches(error.diagnostic)
+    fun dislikedCandidate(error: AdapterException): Boolean =
+        error.status==TaskStatus.UNKNOWN && error.diagnostic=="tieba reason=disliked"
     fun requireSuccess(body: JSONObject, action: String) {
         val code = number(body.opt("error_code"))
         if (code == 0L) return
@@ -120,7 +122,7 @@ internal object TiebaLikeCodec {
         }
         val agree = thread?.optJSONObject("agree")
         if (number(agree?.opt("agree_type")) == 5L)
-            throw AdapterException(TaskStatus.UNKNOWN, "你已点踩此帖")
+            throw AdapterException(TaskStatus.UNKNOWN, "你已点踩此帖", "tieba reason=disliked")
         return when (number(agree?.opt("has_agree"))) {
             0L -> false
             1L -> true
@@ -129,11 +131,11 @@ internal object TiebaLikeCodec {
     }
 
     fun readFields(bduss: String) = mapOf("BDUSS" to bduss, "_client_type" to "2", "_client_version" to READ_VERSION)
-    fun writeFields(bduss: String, tbs: String, post: Post, cuid: String, undo: Boolean) = mapOf(
+    fun writeFields(bduss: String, tbs: String, post: Post, cuid: String) = mapOf(
         "BDUSS" to bduss, "_client_version" to WRITE_VERSION, "agree_type" to "2", "cuid" to cuid,
         // The wire key is obj_type. aiotieba 50d2bb0c renamed it during a local type refactor;
         // original MiniTiebaApi and maintained Android clients still send obj_type for opAgree.
-        "obj_type" to "3", "op_type" to if (undo) "1" else "0", "post_id" to "0", "tbs" to tbs, "thread_id" to post.threadId
+        "obj_type" to "3", "op_type" to "0", "post_id" to "0", "tbs" to tbs, "thread_id" to post.threadId
     )
 
     fun newCuid(): String {
