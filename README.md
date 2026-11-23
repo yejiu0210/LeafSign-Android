@@ -33,15 +33,13 @@
 
 ## 界面预览
 
-<p align="center">
-  <img src="docs/assets/screenshots/home.jpg" alt="今日：一键签到和今日进度" width="31%">
-  &nbsp;
-  <img src="docs/assets/screenshots/add-account.jpg" alt="添加账号：选择平台并扫码登录" width="31%">
-  &nbsp;
-  <img src="docs/assets/screenshots/settings.jpg" alt="设置：每日自动签到与准点运行检查" width="31%">
-</p>
-
-<p align="center"><sub>今日进度 · 扫码添加账号 · 定时签到设置</sub></p>
+<table align="center">
+<tr>
+<td align="center" valign="top" width="33%"><img src="docs/assets/screenshots/home.jpg" alt="今日：一键签到和今日进度"><br><sub>今日进度</sub></td>
+<td align="center" valign="top" width="33%"><img src="docs/assets/screenshots/add-account.jpg" alt="添加账号：选择平台并扫码登录"><br><sub>扫码添加账号</sub></td>
+<td align="center" valign="top" width="33%"><img src="docs/assets/screenshots/settings.jpg" alt="设置：每日自动签到与准点运行检查"><br><sub>定时签到设置</sub></td>
+</tr>
+</table>
 
 ## 支持的平台
 
