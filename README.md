@@ -1,159 +1,144 @@
 <div align="center">
 
-<img src="docs/assets/icon.png" alt="一叶签图标" width="112">
+<img src="docs/assets/icon.png" alt="一叶签图标" width="120">
 
-<img src="docs/assets/banner.svg" alt="一叶签（LeafSign）：一个按钮完成每日签到" width="100%">
+# 一叶签 LeafSign
 
-个人使用的原生 Android 签到应用：网易云音乐、百度贴吧、森空岛、哔哩哔哩、小黑盒，扫码登录，一个按钮完成每日任务。
+**扫码登录，一个按钮完成每日签到。**
 
+网易云音乐 · 百度贴吧 · 森空岛 · 哔哩哔哩 · 小黑盒
+
+[![Release](https://img.shields.io/github/v/release/yejiu0210/LeafSign-Android?include_prereleases&style=flat-square&color=7C6CF0&label=下载)](https://github.com/yejiu0210/LeafSign-Android/releases)
 ![Android](https://img.shields.io/badge/Android-8.0+-34A853?style=flat-square&logo=android&logoColor=white)
-![Kotlin](https://img.shields.io/badge/Kotlin-2.1.20-7F52FF?style=flat-square&logo=kotlin&logoColor=white)
-![Jetpack Compose](https://img.shields.io/badge/Jetpack_Compose-UI-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)
-![本地运行](https://img.shields.io/badge/运行-完全本地-0D9488?style=flat-square)
+![Kotlin](https://img.shields.io/badge/Kotlin-Compose-7F52FF?style=flat-square&logo=kotlin&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-F59E0B?style=flat-square)
+[![Stars](https://img.shields.io/github/stars/yejiu0210/LeafSign-Android?style=flat-square&color=5468EE)](https://github.com/yejiu0210/LeafSign-Android/stargazers)
 
-[支持平台](#支持平台) · [安装](#安装) · [使用](#使用) · [凭证与隐私](#凭证与隐私) · [结果说明](#结果说明) · [后台任务](#可选后台任务) · [构建](#构建) · [文档](#文档) · [更新记录](docs/CHANGELOG.md)
+<img src="docs/assets/banner.svg" alt="一叶签：扫码登录，一个按钮完成每日签到" width="100%">
+
+[功能](#功能) · [支持的平台](#支持的平台) · [快速上手](#快速上手) · [常见问题](#常见问题) · [隐私与安全](#隐私与安全) · [自行构建](#自行构建) · [更新记录](docs/CHANGELOG.md)
 
 </div>
 
-| 完全本地 | 只连官方 | 结果可信 |
-| :---: | :---: | :---: |
-| 没有自建服务器、公共中转，<br>不需要 Root 或无障碍权限 | 平台凭证只发送到<br>适配器内列出的官方域名 | 所有平台都走真实 HTTP 适配器，<br>生产代码里没有模拟成功的分支 |
+## 功能
 
-Kotlin / Jetpack Compose，Android 8.0（API 26）以上。
+| | |
+| :--- | :--- |
+| 📱 **扫码登录** | 用官方 App 扫一下就能添加账号，支持系统双开的分身 App；不用抓包，也不用复制 Cookie |
+| ⏰ **准点定时签到** | 精确闹钟 + 前台服务 + 每小时兜底，国产 ROM 可以再配合 Shizuku 保活；错过了会自动补跑当天 |
+| 🔁 **失败自动重试** | 零点高峰被限流时，5 分钟后只重跑失败的项，每天最多 3 次 |
+| 📈 **等级进度一目了然** | 贴吧各吧等级经验、B 站等级经验、网易云黑胶成长值都有进度条，森空岛显示今天领到了什么 |
+| ✅ **结果可信** | 签完会再查一次平台的真实状态，确认了才显示「签到成功」；查不清就老实说「结果未确认」 |
+| 🔒 **完全本地** | 没有任何服务器，凭证加密存在手机里，只发往各平台自己的官方域名 |
 
-> 「一叶签」原名「一键签到」，取自作者名字里的「葉」。包名 `cn.onetap.checkin` 与仓库名沿用旧称，不影响覆盖升级。图标里的「叶子精灵」由 NovelAI 绘制。
+## 支持的平台
 
-## 当前状态
-
-| 当前版本 | 下载 | 验证状态 |
+| 平台 | 每天自动做的事 | 需要什么 |
 | --- | --- | --- |
-| **0.5.11**（versionCode 21） | [Releases](https://github.com/yejiu0210/one-tap-checkin-android/releases)（私有仓库，需有权限的账号登录） | 单元测试 377 项通过、Lint 无错误（2026-11-23）。本人真机已确认：零点定时签到配合失败自动重试可以正常完成、小黑盒扫码登录成功。0.4.5 及之前的验证见 [verification.md](docs/verification.md) |
-
-## 支持平台
-
-| 平台 | 执行的任务 | 前提条件 | 接入文档 |
-| --- | --- | --- | --- |
-| 网易云音乐 | 「黑胶乐签」（两步请求后需服务端今日状态确认）；「云贝签到」 | 黑胶乐签资格以官方为准，不引导购买会员；云贝签到任何账号可用 | [netease-vip](docs/integration-netease-vip.md) |
-| 百度贴吧 | 已选关注吧签到 + 服务端自检；可选每吧每日随机点赞一帖 | — | [签到](docs/integration-music-tieba.md) · [点赞](docs/integration-tieba-like.md) |
-| 森空岛 | 明日方舟、明日方舟：终末地每日签到，支持主账号 + 分身多账号、按角色和区服选择 | 已绑定游戏角色 | [skland](docs/integration-skland.md) |
-| 小黑盒 | 每日签到（签到前查任务中心，签到后复查） | 用小黑盒 App 扫码登录（不提供网页登录） | [heybox](docs/integration-heybox.md) |
-| 哔哩哔哩 | [会员中心等级加速包](https://big.bilibili.com/mobile/index?location=drawExperienceModule)；大会员「大积分」每日签到 | 有效大会员；等级加速包另需 LV1 以上、**手动在官方观看视频一分钟** | [bilibili](docs/integration-bilibili.md) |
+| **网易云音乐** | 黑胶乐签、云贝签到 | 黑胶乐签需要黑胶会员；云贝签到所有账号都能用 |
+| **百度贴吧** | 关注的吧逐个签到；可选每个吧随机赞一个帖子 | 无。点赞默认关闭，按吧单独勾选，只赞你还没赞过的帖子 |
+| **森空岛** | 明日方舟、明日方舟：终末地 每日签到 | 已在森空岛绑定游戏角色；支持一个森空岛账号下的多个角色，也支持主号 + 分身多账号 |
+| **哔哩哔哩** | 大会员等级加速包、大积分签到 | 有效大会员；领等级加速包前要先在 B 站看 1 分钟视频（官方规则） |
+| **小黑盒** | 每日签到 | 用小黑盒 App 扫码登录 |
 
 > [!NOTE]
-> 只执行已选的签到和用户明确要求的每吧每日一次点赞。应用户要求加入网易云云贝签到与 B 站大积分签到（每日一次的官方签到，不做积分兑换）。不做自动评论、刷播放、投币、兑换、购买、付费补签或直播签到，也不会购买、续费或使用付费资源。
+> 一叶签只做各平台**官方提供的每日签到**。不刷播放、不刷浏览、不自动评论或发帖，也不会购买、兑换或使用任何付费资源。
 
-## 安装
+## 快速上手
 
-1. 从 Releases 下载 APK，复制到手机后点击安装，按系统提示允许当前来源安装应用。本包是个人测试版，不上架应用商店。
-2. 覆盖升级必须使用同一签名。签名不同的包需要先卸载旧版，**卸载会丢失本地密钥和全部数据**。
-
-## 使用
-
-**添加账号**
-
-1. 打开「账号 → 添加账号」，选择平台、填写备注，点「用官方 App 扫码登录（推荐）」，再点「打开 App 确认登录」，在官方 App（可选分身）里确认；跳转不了时二维码会存进相册，在 App 的「扫一扫 → 相册」里选图即可。除小黑盒外，也可以用备用的「官方网页登录并自动导入」。
-2. 在内嵌官网完成登录和官方验证码，检测到授权后会自动校验并保存。如果没有自动返回，点「登录完成，检测账号」。
-3. 保存后核对昵称、ID、角色或关注的贴吧。同一平台 ID 不能重复添加。
-
-**各平台说明**
-
-- **森空岛**：打开官方鹰角账号中心。主账号和分身账号分别添加（备注「主账号」「分身账号」），两个账号应显示不同的森空岛 ID。展开各账号选择方舟、终末地的具体角色及区服；未绑定的游戏显示「未绑定」，不算失败。
-- **小黑盒**：只支持扫码登录（0.4.x 的网页登录在手机上一直不稳定，已移除），也可以在备用入口手动导入 `heybox_id` 和 `pkey`。小黑盒每次校验身份都会换发新的 pkey，应用会自动保存最新值，不需要手动更新。
-- **贴吧签到**：可全选或只勾选需要签到的吧。提交后会读取同账号、同吧的当日签到状态，自检通过才显示「签到成功 / 今日已签到」；自检缺项、不可用或仍显示未签时保留「结果待确认」，可稍后重试。
-- **贴吧点赞**：旧账号先点「校验 / 刷新」，再勾选各吧的「随机点赞一帖」或点「全选随机一赞」。每个吧每天随机赞一个你还没赞过的帖子，默认关闭；不会取消你原有的赞。「取消全部随机一赞」只关闭本账号的点赞任务，不撤销已点的赞，也不改变签到勾选或历史。
-
-**查看等级和签到所得**
-
-签到后会顺便读取各平台的成长数据，有升级进度的显示进度条和「当前 / 所需 · 百分比」：贴吧每个吧的等级、经验和连签天数，B 站等级经验和大积分，网易云黑胶成长值和云贝，森空岛今日签到奖励。贴吧在首页只显示签到 / 点赞完成数，点「查看各吧详情」进二级页面看每个吧。
-
-**日常操作**
-
-| 操作 | 作用 |
-| --- | --- |
-| 一键签到 | 执行全部已选任务并显示分项结果；某项失败不影响其他独立任务 |
-| 仅重试失败 / 待确认项 | 只重跑失败、未知或中断的项。资格不足、登录失效、需手动验证的项要先解决原因，不要反复点击绕过平台限制 |
-| 备注 / 更新凭证 | 登录失效时重新走官方网页登录。只能更新为同一平台身份，换账号请另外添加；手动导入在备用入口，凭证留空表示保留原值 |
-| 退出本地授权 | 清除本地凭证并停用任务，保留历史 |
-| 删除账号和记录 | 删除该账号全部本地数据（不会注销官方 App 的会话） |
-| 设置 → 失败后自动重试 | 定时签到有失败项时，5 分钟后自动只重跑这些项，每天最多 3 次 |
-| 设置 → 外观 | 跟随系统 / 浅色 / 深色，即时保存；官网网页使用系统 WebView 的深色支持，实际配色由官网决定 |
-
-## 凭证与隐私
-
-- 默认在应用内 WebView 打开官方网页，密码、短信和验证码都由官方页面处理。应用只读取自己的网页登录会话并向平台校验身份，**不读取原版或分身 App 的私有文件**。
-- 每次添加或更新前清理上一次会话，导入后再次清理，避免主账号和分身账号复用同一个网页登录。后台任务使用各账号独立加密保存的授权。
-- 允许系统截图；手动凭证输入为遮罩显示，森空岛读取授权和校验身份期间会隐藏网页登录内容。官方登录页由平台控制，截图时请自行遮盖手机号等信息。
-- 登录边界见 [integration-web-login.md](docs/integration-web-login.md)。
+1. **安装**：到 [Releases](https://github.com/yejiu0210/LeafSign-Android/releases) 下载最新的 APK 安装（Android 8.0 及以上）。
+2. **添加账号**：「账号 → 添加账号」，选平台，点「用官方 App 扫码登录」，在官方 App 里确认就好。跳转不过去时，二维码会存进相册，在官方 App 的「扫一扫 → 相册」里选这张图即可。
+3. **选择要签的项**：添加后核对一下昵称和角色，勾上要签到的项目。
+4. **一键签到**：回到「今日」点「一键签到」，每一项都会显示结果，以及等级、经验这些数据。
+5. **打开每日自动签到**（可选）：「设置 → 每日自动签到」，选个时间。建议按设置页里的「准点运行检查」把权限都打开。
 
 <details>
 <summary><b>备用：手动导入凭证</b></summary>
 
-凭证等同于登录授权，务必自己保管，不要发到聊天里。
+扫码不方便时，可以在「添加账号 → 手动导入凭证」里填。凭证等于登录授权，请自己保管好，不要发给别人。
 
-- **网易云音乐**：在 `https://music.163.com/` 登录，从桌面浏览器 Cookies 获取 `MUSIC_U` 和可选 `__csrf`。旧网易云账号升级后需点「校验 / 刷新」并勾选新任务；旧的普通签到记录会保留，但不会算作乐签完成。
-- **贴吧**：在 `https://tieba.baidu.com/` 登录，复制 Cookie 里的 `BDUSS`。可以粘贴完整 Cookie，适配器只取 `BDUSS` 和可选的 `STOKEN`；保存时会刷新关注列表。网页 Cookie 被风控时先在官方完成验证再更新。
-- **森空岛**：首选应用内 `https://user.hypergryph.com/login` 官方账号中心，登录后从官方 SDK 读取本次会话的通行证 token，再换取森空岛凭证并校验角色，各账号单独登录。已有本人官方 token 或 `{"cred":"官方cred"}` 时可在备用入口输入，设备标识等高级格式见接入文档。旧的 `web-api.skland.com/account/info/hg` 与账号中心不是同一个站点会话，不要混用。
-- **小黑盒**：在 `https://www.xiaoheihe.cn/` 登录，从 Cookies 复制 `heybox_id` 和 `pkey`，格式为 `heybox_id=…; pkey=…`。
-- **B 站**：在 `https://www.bilibili.com/` 登录，复制 `SESSDATA` 和 `bili_jct`，格式为 `SESSDATA=…; bili_jct=…`，可以带上 `DedeUserID`。
-
-在电脑上拿到凭证后，用你信任的个人方式传到手机，避免公共剪贴板、公共文档和第三方抓包服务，用完可清空剪贴板。凭证有效期由平台决定，没有保证长期有效的刷新机制；森空岛会用通行证 token 重新获取短期 cred / 签名 token。
+| 平台 | 在电脑浏览器登录后，从 Cookies 里复制 |
+| --- | --- |
+| 网易云音乐 | `MUSIC_U` |
+| 百度贴吧 | `BDUSS`（有 `STOKEN` 可以一起填） |
+| 森空岛 | 鹰角通行证 token，或包含 `cred` 的官方 JSON |
+| 哔哩哔哩 | `SESSDATA` 和 `bili_jct` |
+| 小黑盒 | `heybox_id` 和 `pkey` |
 
 </details>
 
-## 结果说明
+## 常见问题
 
-- 「成功」和「今日已签到」都必须有明确的业务字段支持。HTTP 200、缺字段、未知错误码、游客日历都**不算**成功。
-- 未绑定、资格不足、登录失效、需手动验证、失败、待确认、尚未接入会分别显示。B 站的领取与经验到账分开显示；平台维护期间只显示领取已受理、经验待发，不虚构到账数值。
-- 断网或超时的写请求可能已经到达服务器。只有只读查询明确证明未执行时才会有限重试，查不到状态就保留待确认；进程中断留下的执行中记录会恢复为「中断待确认」。
+<details>
+<summary><b>定时签到时贴吧大面积失败？</b></summary>
 
-> [!WARNING]
-> 各平台精确的日重置时刻尚未拿到全部官方证据。本地暂按北京时间 00:00 分日，优先以平台只读状态为准；没有可靠状态查询的平台在本地当天完成后不会重复写入。跨日行为仍需真实账号验证。
+零点刚过是贴吧签到的高峰，百度会限流，请求会被 302 跳转。打开「设置 → 失败后自动重试」（默认已开），5 分钟后会自动补签；也可以把签到时间设在 00:30 之后避开高峰。
 
-## 可选后台任务
+</details>
 
-- 先在前台完成至少一项平台明确确认的签到，设置页才允许开启「每日自动签到」；默认关闭。时间按北京时间设置。
-- **多层保障**：精确闹钟到点唤醒（默认「闹钟模式」，状态栏会有闹钟图标）→ 前台服务执行，通知栏显示进度并保留结果；开机、应用更新、修改系统时间后自动重排，错过时间会补跑当天；每小时一次的备份任务兜底。多个触发同时到达时只执行一次。
-- **准点运行检查**（设置页）：精确闹钟权限、忽略电池优化、通知权限、厂商自启动 / 后台运行。可用「1 分钟后测试一次」验证整条链路，并查看最近 20 次触发记录。
-- **Shizuku 增强（推荐国产 ROM 使用）**：安装并启动 [Shizuku](https://shizuku.rikka.app/zh-hans/) 后授权本应用，可「一键保活」，并开启「Shizuku 守护唤醒」——在 Shizuku 进程中常驻定时器，应用被杀或被强行停止后到点仍会拉起签到。手机重启后需在 Shizuku 中重新启动服务（已 Root 的设备会自动启动）。
-- **失败后自动重试**（默认开启）：定时签到结束后如果还有失败、待确认或中断的项，5 分钟后只重跑这些项，每天最多 3 次。主要应对零点高峰时贴吧大面积 HTTP 302；需要人工验证或登录失效的项不重试。
-- 后台只补跑当天，不补历史，不消耗补签资源。
+<details>
+<summary><b>定时签到没有按时运行？</b></summary>
 
-## 构建
+多半是被系统省电策略拦了。到「设置 → 准点运行检查」把精确闹钟、忽略电池优化、通知、厂商自启动都打开，再点「1 分钟后测试一次」看看。小米、OPPO、vivo、华为等系统推荐配合 [Shizuku](https://shizuku.rikka.app/zh-hans/)，在设置里一键保活，并开启「Shizuku 守护唤醒」。
 
-固定工具链：JDK 17（需标准 OpenJDK 发行版，如 Temurin；Oracle GraalVM 的 jlink 与 AGP 不兼容）、Gradle 8.13、Android Gradle Plugin 8.11.1、Kotlin / Compose 编译插件 2.1.20、Compose BOM 2025.04.01、compile / target SDK 36、Build Tools 35.0.0。依赖来自 Google Maven / Maven Central，仓库自带 Gradle Wrapper 及校验值。
+</details>
 
-用 Android Studio 导入此目录并安装 SDK 36 与 Build Tools 35.0.0；或在 Windows PowerShell 执行：
+<details>
+<summary><b>显示「结果未确认」是什么意思？</b></summary>
+
+请求发出去了，但再查平台状态时没能确认已经完成，比如网络超时、服务端同步慢。为了不重复操作，一叶签不会盲目重发，稍后点「仅重试失败项」，或者等自动重试就行。
+
+</details>
+
+<details>
+<summary><b>显示「需要验证」或「登录已失效」？</b></summary>
+
+「需要验证」：去对应的官方 App 里完成一次验证码或安全验证，再回来重试。
+「登录已失效」：在账号页点「备注 / 更新凭证」，重新扫码登录。
+
+</details>
+
+<details>
+<summary><b>从 0.4.x 升级装不上？</b></summary>
+
+0.5.0 起更换了签名证书，需要先卸载旧版再安装（本地账号需要重新登录）。0.5.x 之间可以直接覆盖安装。
+
+</details>
+
+## 隐私与安全
+
+- **没有服务器**：所有请求都从你的手机直接发往各平台的官方域名，开发者收不到你的任何数据。
+- **凭证加密保存**：用 Android Keystore 密钥加密存在本地，禁用了系统备份和明文 HTTP。
+- **扫码和网页登录都走官方**：密码、短信、验证码都由官方页面或官方 App 处理；一叶签不读取原版或分身 App 的私有文件。
+- **退出和删除**：账号页可以随时「退出本地授权」（清除凭证、保留记录）或「删除账号和记录」。
+
+## 自行构建
+
+需要 JDK 17（Temurin 等标准 OpenJDK；GraalVM 的 jlink 与 AGP 不兼容）和 Android SDK 36、Build Tools 35.0.0。
 
 ```powershell
 .\Build.ps1 -JavaHome 'C:\path\to\jdk-17' -SdkPath 'C:\path\to\android-sdk'
 ```
 
-手动命令：
+或者直接执行：
 
 ```powershell
 .\gradlew.bat :app:assembleRelease :app:testDebugUnitTest :app:lintRelease
-# 连接自己授权的测试设备或启动模拟器后：
-.\gradlew.bat :app:connectedDebugAndroidTest
 ```
 
-产物为 `app/build/outputs/apk/release/app-release.apk`。交付 APK 是关闭调试的 release 构建，使用本机开发测试签名；设备测试使用同源码的 debug 变体。源码中不包含签名私钥、凭证或本机 SDK 路径。
+产物在 `app/build/outputs/apk/release/app-release.apk`。仓库里没有签名私钥，自行构建的包签名和 Releases 里的不同，不能覆盖安装官方发布的版本。
 
-## 文档
+各平台的接口说明和维护笔记在 [docs/](docs/) 目录：[网易云](docs/integration-netease-vip.md) · [贴吧签到](docs/integration-music-tieba.md) · [贴吧点赞](docs/integration-tieba-like.md) · [森空岛](docs/integration-skland.md) · [B 站](docs/integration-bilibili.md) · [小黑盒](docs/integration-heybox.md) · [维护说明](docs/maintenance.md)
 
-| 文档 | 内容 |
-| --- | --- |
-| [更新记录](docs/CHANGELOG.md) | 各版本改动 |
-| [verification.md](docs/verification.md) | 接入状态、验证证据与限制 |
-| [maintenance.md](docs/maintenance.md) | 平台适配器维护说明 |
-| [integration-web-login.md](docs/integration-web-login.md) | 官方网页登录与自动导入 |
-| [integration-*.md](docs/) | 各平台协议核查记录（含参考的上游许可证） |
-| [docs/evidence/](docs/evidence/) | 构建、测试、Lint 与 APK 签名证据 |
+## 免责声明
+
+本项目仅供学习交流，与网易云音乐、百度贴吧、鹰角网络、哔哩哔哩、小黑盒等平台没有任何关系。各平台的接口可能随时变化或加强风控，使用自动签到存在账号被限制的风险，请自行判断、自担风险。
 
 ## 许可证
 
-本项目新写的代码采用 [MIT](LICENSE)；协议参考的上游许可证保留在各接入文档中。
+[MIT](LICENSE)。参考的上游项目和许可证保留在各接入文档中。应用图标的插画由 NovelAI 生成。
 
 <div align="center">
-<sub>一叶签 LeafSign · 个人使用，不上架应用商店 · <a href="#readme">回到顶部</a></sub>
+<br>
+<sub>如果一叶签帮到了你，点个 ⭐ Star 支持一下吧～</sub>
 </div>

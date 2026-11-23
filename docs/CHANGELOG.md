@@ -1,6 +1,12 @@
 # 更新记录
 
-按版本从新到旧排列。0.3.0～0.4.5 的说明原文迁自旧版 README；对应 APK 见 [Releases](https://github.com/yejiu0210/one-tap-checkin-android/releases)，验证证据见 [verification.md](verification.md)。
+按版本从新到旧排列。0.3.0～0.4.5 的说明原文迁自旧版 README；对应 APK 见 [Releases](https://github.com/yejiu0210/LeafSign-Android/releases)，验证证据见 [verification.md](verification.md)。
+
+## 0.5.12（2026-11-23）开源
+
+- 一叶签在 GitHub 开源，仓库迁到 [yejiu0210/LeafSign-Android](https://github.com/yejiu0210/LeafSign-Android)。
+- 设置页顶部加了一个小卡片，点一下打开 GitHub 仓库。
+- README 全部重写，横幅换成和新图标一致的蓝紫配色。
 
 ## 0.5.11（2026-11-23）贴吧点赞不再「取消再赞」
 

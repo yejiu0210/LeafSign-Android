@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Lock
@@ -42,6 +43,7 @@ import cn.onetap.checkin.theme.ThemeMode
 import kotlinx.coroutines.launch
 
 private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
+private const val GITHUB_URL = "https://github.com/yejiu0210/LeafSign-Android"
 
 private fun sourceTitle(source: String) = when (source) {
     "alarm" -> "定时闹钟"; "shizuku" -> "Shizuku 守护"; "catchup" -> "启动补跑"
@@ -94,6 +96,25 @@ internal fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         ScreenHeader("设置")
+
+        // ───── 开源地址（小卡片，不抢眼） ─────
+        Surface(
+            onClick = { context.safeStart(Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Star, null, Modifier.size(18.dp), tint = Color(0xFFF5B83D))
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("一叶签已在 GitHub 开源", style = MaterialTheme.typography.bodyMedium)
+                    Hint("好用的话，去点个 Star 支持一下吧～")
+                }
+                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "打开 GitHub", Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
 
         // ───── 每日自动签到 ─────
         SectionCard("每日自动签到", icon = Icons.Rounded.DateRange,
