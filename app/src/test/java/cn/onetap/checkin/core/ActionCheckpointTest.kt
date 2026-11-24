@@ -58,6 +58,17 @@ class ActionCheckpointTest {
             assertEquals("",Rules.safeDiagnostic(it))
         }
     }
+    @Test fun heyboxDiagnosticAcceptsOnlyWhitelistedCharactersAndLength() {
+        val maximumLength = "heybox " + "a".repeat(73)
+        for (diagnostic in listOf("heybox sign still pending after write", "heybox missing task list",
+            "heybox auth required", "heybox sign status=failed", "heybox sign state=retry_2", "heybox version 1.0", maximumLength)) {
+            assertEquals(diagnostic, Rules.safeDiagnostic(diagnostic))
+        }
+        for (diagnostic in listOf("heybox 签到失败", "heybox sign status=FAILED", "heybox sign status=\"failed\"",
+            "$maximumLength a", "heybox sign\nfailed", "prefix heybox sign status=failed")) {
+            assertEquals(diagnostic, "", Rules.safeDiagnostic(diagnostic))
+        }
+    }
     @Test fun statsDiagnosticPreservesOnlyTheWhitelistedFieldListAlongsideExistingDiagnostics() {
         val stats = "stats 未识别：字段 data.userLevel,growthPoint_2,${"a".repeat(40)}"
         assertEquals(stats, Rules.safeDiagnostic(stats))

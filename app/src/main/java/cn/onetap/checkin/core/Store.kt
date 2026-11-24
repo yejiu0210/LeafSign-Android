@@ -114,6 +114,7 @@ object Rules {
             Regex("HTTP 3[0-9]{2}; (?:tieba endpoint=/(?:c/s/login|c/f/forum/(?:like|forumGuide)|c/c/forum/sign|mo/q/newmoindex); )?location_host=(?:[a-z0-9.-]{1,253}|[a-f0-9]*:[a-f0-9:]{1,44})")
                 .matchEntire(original)?.let { return it.value }
             Regex("tieba forumGuide is_sign=[01]").matchEntire(original)?.let { return it.value }
+            Regex("heybox [a-z0-9 _=.]{1,73}").matchEntire(original)?.let { return it.value }
             Regex("tieba endpoint=pb_page reason=(?:thread_unavailable|verification|login|other|missing) thread_id=[1-9][0-9]{0,18} error_code=(?:-?[0-9]{1,10}|missing)")
                 .matchEntire(original)?.let { return it.value }
             val numeric = Regex("(?i)\\b(?:HTTP [1-5][0-9]{2}|(?:code|status|errno|retcode|error_code|experience\\.state)[=: ]+(?:-?[0-9]{1,10}|missing)|exception[=: ]+[A-Za-z]{1,60})\\b")

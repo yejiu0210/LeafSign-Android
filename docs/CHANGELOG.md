@@ -2,6 +2,11 @@
 
 按版本从新到旧排列。0.3.0～0.4.5 的说明原文迁自旧版 README；对应 APK 见 [Releases](https://github.com/yejiu0210/LeafSign-Android/releases)，验证证据见 [verification.md](verification.md)。
 
+## 0.5.13（2026-11-24）修复小黑盒签到显示「结果未确认」
+
+- **小黑盒每日签到**：签到后会等一会儿再分多次查任务中心（最多 4 次，前后约 5 秒），服务端同步慢也能正确显示「签到成功」，期间不会重复签到。
+- 小黑盒签到失败时，记录页的「诊断」里能看到具体原因（例如服务端返回的状态），以前这部分会被过滤掉，看不到。
+
 ## 0.5.12（2026-11-23）开源
 
 - 一叶签在 GitHub 开源，仓库迁到 [yejiu0210/LeafSign-Android](https://github.com/yejiu0210/LeafSign-Android)。

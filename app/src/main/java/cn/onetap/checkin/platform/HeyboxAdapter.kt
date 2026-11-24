@@ -9,10 +9,12 @@ import cn.onetap.checkin.core.PlatformAdapter
 import cn.onetap.checkin.core.Target
 import cn.onetap.checkin.core.TaskResult
 import cn.onetap.checkin.core.TaskStatus
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 
 class HeyboxAdapter internal constructor(
+    private val pause: (Long) -> Unit = { Thread.sleep(it) },
     private val exchange: ((String, Map<String, String>, Map<String, String>) -> JSONObject)? = null
 ) : PlatformAdapter {
     override val platform = Platform.HEYBOX
@@ -64,20 +66,54 @@ class HeyboxAdapter internal constructor(
         val before = readState(cookies)
         if (before.status != TaskStatus.PENDING) return before
 
-        val confirmedWrite = try {
-            val response = request(SIGN_PATH, cookies)
-            rejection(response)?.let { throw it }
-            response.optJSONObject("result")?.opt("state") == "success"
+        val response = try {
+            request(SIGN_PATH, cookies)
         } catch (error: AdapterException) {
             if (error.status != TaskStatus.UNKNOWN) throw error
-            false
+            null
         }
-        val after = readState(cookies)
-        return when (after.status) {
-            TaskStatus.ALREADY -> if (confirmedWrite) TaskResult(TaskStatus.SUCCESS, "签到成功") else after
-            TaskStatus.PENDING -> unknownState("sign still pending after write")
+        var signDiagnostic = ""
+        var confirmedWrite = false
+        if (response != null) {
+            val rejected = rejection(response)
+            if (rejected != null) {
+                signDiagnostic = formatSignDiagnostic("status", response.opt("status"))
+                if (rejected.status != TaskStatus.UNKNOWN)
+                    throw AdapterException(rejected.status, rejected.message, signDiagnostic)
+            } else {
+                val state = response.optJSONObject("result")?.opt("state")
+                confirmedWrite = state == "success"
+                if (!confirmedWrite) signDiagnostic = formatSignDiagnostic("state", state)
+            }
+        }
+
+        val unconfirmed = unknownState("sign still pending after write")
+        var after: TaskResult? = null
+        var readFailure = unconfirmed
+        for (delay in READBACK_DELAYS) {
+            if (delay > 0) pause(delay)
+            val read = try {
+                readState(cookies)
+            } catch (error: AdapterException) {
+                TaskResult(error.status, error.message, error.diagnostic)
+            } catch (_: JSONException) {
+                continue
+            } catch (error: IOException) {
+                if (Thread.currentThread().isInterrupted) throw error
+                continue
+            }
+            if (read.status == TaskStatus.ALREADY) {
+                return if (confirmedWrite) TaskResult(TaskStatus.SUCCESS, "签到成功")
+                else read.copy(diagnostic = signDiagnostic)
+            }
+            if (read.status == TaskStatus.UNKNOWN) readFailure = read else after = read
+        }
+        val result = when (after?.status) {
+            null -> readFailure
+            TaskStatus.PENDING -> unconfirmed
             else -> after
         }
+        return if (signDiagnostic.isEmpty()) result else result.copy(diagnostic = signDiagnostic)
     }
 
     private fun readState(cookies: Map<String, String>) = parseTaskState(request(TASK_PATH, cookies))
@@ -130,6 +166,8 @@ class HeyboxAdapter internal constructor(
         const val SIGN_PATH = "/task/sign_v3/sign"
         internal val COOKIE_NAMES = setOf("pkey", "user_pkey", "heybox_id", "user_heybox_id", "x_xhh_tokenid")
         private val ID_PATTERN = Regex("[1-9][0-9]*")
+        private val SIGN_DIAGNOSTIC_VALUE = Regex("[a-z0-9_]{1,32}")
+        private val READBACK_DELAYS = longArrayOf(0, 1000, 1500, 2500)
         private const val EXPIRED_MESSAGE = "登录已失效，请重新扫码登录"
         private const val UNKNOWN_MESSAGE = "结果未确认，请稍后重试"
 
@@ -160,6 +198,11 @@ class HeyboxAdapter internal constructor(
             "need_google_check", "show_captcha", "lack_token", "name_verify", "need_alipay_verify", "need_bind_phone", "need_phone_code" ->
                 AdapterException(TaskStatus.MANUAL, "请在小黑盒完成验证后重试", "heybox manual verification required")
             else -> unknown("unrecognized business status")
+        }
+
+        private fun formatSignDiagnostic(field: String, value: Any?): String {
+            val safeValue = (value as? String)?.takeIf(SIGN_DIAGNOSTIC_VALUE::matches) ?: "other"
+            return "heybox sign $field=$safeValue"
         }
 
         internal fun positiveId(value: Any?): String? = when (value) {

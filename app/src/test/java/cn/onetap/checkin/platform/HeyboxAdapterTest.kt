@@ -10,6 +10,7 @@ import cn.onetap.checkin.core.StateStore
 import cn.onetap.checkin.core.Target
 import cn.onetap.checkin.core.TaskStatus
 import kotlinx.coroutines.runBlocking
+import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -213,14 +214,84 @@ class HeyboxAdapterTest {
     }
 
     @Test fun writeSuccessWithoutReadbackConfirmationRemainsUnknown() {
-        val adapter = HeyboxAdapter { path, _, _ ->
+        val paths = mutableListOf<String>()
+        val pauses = mutableListOf<Long>()
+        val adapter = HeyboxAdapter(pause = { pauses += it }) { path, _, _ ->
+            paths += path
             when (path) {
                 HeyboxAdapter.TASK_PATH -> task("todo")
                 HeyboxAdapter.SIGN_PATH -> write("success")
                 else -> error("Unexpected endpoint")
             }
         }
-        assertEquals(TaskStatus.UNKNOWN, adapter.execute(cookie, target).status)
+        val result = adapter.execute(cookie, target)
+        assertEquals(TaskStatus.UNKNOWN, result.status)
+        assertEquals("heybox sign still pending after write", result.diagnostic)
+        assertEquals(listOf(HeyboxAdapter.TASK_PATH, HeyboxAdapter.SIGN_PATH) + List(4) { HeyboxAdapter.TASK_PATH }, paths)
+        assertEquals(listOf(1000L, 1500L, 2500L), pauses)
+    }
+
+    @Test fun secondReadbackConfirmsSignWithoutAnotherWrite() {
+        val paths = mutableListOf<String>()
+        val pauses = mutableListOf<Long>()
+        var reads = 0
+        val adapter = HeyboxAdapter(pause = { pauses += it }) { path, _, _ ->
+            paths += path
+            when (path) {
+                HeyboxAdapter.TASK_PATH -> task(if (++reads == 3) "finish" else "todo")
+                HeyboxAdapter.SIGN_PATH -> write("success")
+                else -> error("Unexpected endpoint")
+            }
+        }
+        assertEquals(TaskStatus.SUCCESS, adapter.execute(cookie, target).status)
+        assertEquals(listOf(HeyboxAdapter.TASK_PATH, HeyboxAdapter.SIGN_PATH,
+            HeyboxAdapter.TASK_PATH, HeyboxAdapter.TASK_PATH), paths)
+        assertEquals(listOf(1000L), pauses)
+    }
+
+    @Test fun readbackContinuesAfterNetworkAndParsingErrors() {
+        var reads = 0
+        var writes = 0
+        val adapter = HeyboxAdapter(pause = {}) { path, _, _ ->
+            when (path) {
+                HeyboxAdapter.TASK_PATH -> when (++reads) {
+                    1 -> task("todo")
+                    2 -> throw IOException("fixture timeout")
+                    3 -> throw JSONException("fixture parse error")
+                    4 -> JSONObject().put("status", "ok")
+                    else -> task("finish")
+                }
+                HeyboxAdapter.SIGN_PATH -> { writes++; write("success") }
+                else -> error("Unexpected endpoint")
+            }
+        }
+        assertEquals(TaskStatus.SUCCESS, adapter.execute(cookie, target).status)
+        assertEquals(5, reads)
+        assertEquals(1, writes)
+    }
+
+    @Test fun unconfirmedSignResponseDiagnosticsKeepOnlySafeStatusOrState() {
+        val cases = listOf(
+            rejected("failed") to "heybox sign status=failed",
+            rejected("失败") to "heybox sign status=other",
+            rejected("a".repeat(33)) to "heybox sign status=other",
+            write("retry_2") to "heybox sign state=retry_2",
+            write("a".repeat(32)) to "heybox sign state=${"a".repeat(32)}",
+            write("FAIL") to "heybox sign state=other"
+        )
+        for ((response, expected) in cases) {
+            response.put("msg", "private fixture text")
+            val adapter = HeyboxAdapter(pause = {}) { path, _, _ ->
+                when (path) {
+                    HeyboxAdapter.TASK_PATH -> task("todo")
+                    HeyboxAdapter.SIGN_PATH -> response
+                    else -> error("Unexpected endpoint")
+                }
+            }
+            val result = adapter.execute(cookie, target)
+            assertEquals(TaskStatus.UNKNOWN, result.status)
+            assertEquals(expected, result.diagnostic)
+        }
     }
 
     @Test fun ambiguousWriteReportsOnlyConfirmedTaskCompletion() {
