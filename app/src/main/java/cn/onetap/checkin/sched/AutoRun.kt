@@ -64,6 +64,11 @@ internal object AutoRun {
                     val loggedSummary = attempt?.let { "第 $it/$MAX_AUTO_RETRIES 次重试：$summary" } ?: summary
                     recordAndSchedule(app, source, loggedSummary)
                     if (records != null || attempt != null) scheduleNextRetry(app, source, records)
+                    if (needsHeyboxReminder(source, records.orEmpty())) {
+                        runCatching { RunNotifications.showHeyboxReminder(app) }.onFailure {
+                            runCatching { app.scheduler.record(source, "通知失败：${it.javaClass.simpleName}") }
+                        }
+                    }
                     if (owned) {
                         runCatching { app.refresh() }
                     }

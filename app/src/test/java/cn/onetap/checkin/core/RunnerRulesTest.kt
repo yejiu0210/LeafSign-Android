@@ -36,6 +36,40 @@ class RunnerRulesTest {
         assertEquals(2,store.read().records.count {it.accountId==a.id});assertEquals(2,store.read().records.count {it.accountId==b.id})
         assertEquals(4,store.read().records.map {it.accountId+it.targetId}.distinct().size)
     }
+    @Test fun recheckOnlyRunsTheSpecifiedAccountAndTargetWithoutDiscovery() = runBlocking {
+        val main = account("main")
+        val clone = account("clone").copy(enabled = setOf("ak"))
+        val previous = Record(accountId = main.id, platform = main.platform, accountLabel = main.note,
+            targetId = "ef", task = "ef", period = "old", status = TaskStatus.SUCCESS, message = "fixture")
+        val store = MemoryStore(AppState(accounts = listOf(main, clone), records = listOf(previous)))
+        val calls = mutableListOf<String>()
+        val adapter = FakeAdapter().apply {
+            validateAction = { credential ->
+                calls += "validate:$credential"
+                Identity(credential, credential, clone.targets + target("new", credential))
+            }
+            queryAction = { credential, target ->
+                calls += "query:$credential:${target.id}"
+                TaskResult(TaskStatus.PENDING, "fixture")
+            }
+            action = { credential, target ->
+                calls += "execute:$credential:${target.id}"
+                TaskResult(TaskStatus.SUCCESS, "fixture")
+            }
+        }
+        val runner = Runner(store, mapOf(adapter.platform to adapter))
+        val result = runner.tryRun(onlyFailed = false, discoverNewTargets = false,
+            selection = Runner.TargetSelection(clone.id, "ef"))
+        assertEquals(1, result)
+        assertEquals(listOf("validate:clone", "query:clone:ef", "execute:clone:ef"), calls)
+        val state = store.read()
+        assertEquals(listOf(main, clone), state.accounts)
+        assertEquals(previous, state.records.first())
+        val newRecord = state.records.drop(1).single()
+        assertEquals(clone.id, newRecord.accountId)
+        assertEquals("ef", newRecord.targetId)
+        assertEquals(TaskStatus.SUCCESS, newRecord.status)
+    }
     @Test fun identityMismatchNeverWrites()=runBlocking {
         val adapter=FakeAdapter().apply {validateAction={Identity("wrong","wrong",emptyList())}}
         val store=MemoryStore(AppState(accounts=listOf(account("main"))))
@@ -154,7 +188,10 @@ class RunnerRulesTest {
         val adapter=FakeAdapter().apply {action={_,_->entered.countDown();release.await(3,TimeUnit.SECONDS);TaskResult(TaskStatus.SUCCESS,"fixture")}}
         val store=MemoryStore(AppState(accounts=listOf(account("main").copy(enabled=setOf("ak")))));val runner=Runner(store,mapOf(Platform.SKLAND to adapter))
         val first=async(Dispatchers.IO){runner.run()};assertTrue(entered.await(3,TimeUnit.SECONDS))
-        assertEquals(0,runner.run());release.countDown();first.await();assertEquals(1,adapter.writes)
+        assertEquals(0,runner.run())
+        assertNull(runner.tryRun(onlyFailed = false, discoverNewTargets = false,
+            selection = Runner.TargetSelection(store.read().accounts.single().id, "ak")))
+        release.countDown();first.await();assertEquals(1,adapter.writes)
     }
     @Test fun cancellationDuringQueryNeverStartsWrite()=runBlocking {
         val entered=CountDownLatch(1)

@@ -10,11 +10,24 @@ import androidx.core.app.NotificationCompat
 import cn.onetap.checkin.MainActivity
 import cn.onetap.checkin.R
 import cn.onetap.checkin.CheckInApp
+import cn.onetap.checkin.core.Platform
+import cn.onetap.checkin.core.Record
 import cn.onetap.checkin.core.RunProgress
+import cn.onetap.checkin.core.TaskStatus
+import cn.onetap.checkin.platform.HeyboxAdapter
+
+private val heyboxReminderSources = setOf("alarm", "backup", "shizuku", "catchup", RETRY_SOURCE)
+
+internal fun needsHeyboxReminder(source: String, newRecords: List<Record>): Boolean =
+    source in heyboxReminderSources && newRecords.any {
+        it.platform == Platform.HEYBOX && it.targetId == HeyboxAdapter.TARGET_ID &&
+            it.status == TaskStatus.MANUAL && it.diagnostic == HeyboxAdapter.OPEN_APP_DIAGNOSTIC
+    }
 
 internal object RunNotifications {
     const val SERVICE_ID = 210
     const val RESULT_ID = 211
+    private const val HEYBOX_REMINDER_ID = 212
     private const val CHANNEL = "running"
     private const val RESULT_CHANNEL = "auto_result"
 
@@ -31,10 +44,9 @@ internal object RunNotifications {
     /** One automatic-result ID, shared by Service and WorkManager; claim the failure day atomically. */
     @Synchronized fun showResult(app: CheckInApp, summary: String) {
         if (summary.startsWith("跳过：")) return
-        val settings = runCatching { app.store.read().settings }.getOrDefault(app.state.value.settings)
         val prefs = app.getSharedPreferences("sched_notifications", Context.MODE_PRIVATE)
         val today = todayDate(System.currentTimeMillis())
-        val decision = notificationDecision(summary, settings.notifications, prefs.getString("failure_date", "") == today)
+        val decision = notificationDecision(summary, notificationsEnabled(app), prefs.getString("failure_date", "") == today)
         if (decision == AutoNotification.NONE) return
         if (!app.getSystemService(NotificationManager::class.java).areNotificationsEnabled()) return
         val notification = result(app, summary)
@@ -42,6 +54,23 @@ internal object RunNotifications {
         if (decision == AutoNotification.FAILURE_ONCE && !prefs.edit().putString("failure_date", today).commit()) return
         show(app, RESULT_ID, notification)
     }
+
+    fun showHeyboxReminder(app: CheckInApp) {
+        if (!notificationsEnabled(app) || !app.getSystemService(NotificationManager::class.java).areNotificationsEnabled()) return
+        val notification = builder(app, RESULT_CHANNEL)
+            .setContentTitle("小黑盒还没签到")
+            .setContentText("点一下打开小黑盒，打开就会自动签到")
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setAutoCancel(true)
+        app.packageManager.getLaunchIntentForPackage(HeyboxAdapter.APP_PACKAGE)?.let { launch ->
+            notification.setContentIntent(PendingIntent.getActivity(app, HEYBOX_REMINDER_ID, launch,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+        }
+        show(app, HEYBOX_REMINDER_ID, notification.build())
+    }
+
+    private fun notificationsEnabled(app: CheckInApp) =
+        runCatching { app.store.read().settings }.getOrDefault(app.state.value.settings).notifications
 
     fun show(context: Context, id: Int, notification: Notification) {
         try { context.getSystemService(NotificationManager::class.java).notify(id, notification) }

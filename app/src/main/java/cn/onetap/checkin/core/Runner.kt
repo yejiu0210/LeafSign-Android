@@ -25,14 +25,28 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
     suspend fun run(onlyFailed: Boolean = false, progress: (RunProgress) -> Unit = {}): Int =
         run(onlyFailed, discoverNewTargets = true, progress)
 
-    internal suspend fun run(onlyFailed: Boolean, discoverNewTargets: Boolean, progress: (RunProgress) -> Unit = {}): Int {
-        if (!mutex.tryLock()) return 0
+    internal suspend fun run(onlyFailed: Boolean, discoverNewTargets: Boolean, progress: (RunProgress) -> Unit = {}): Int =
+        tryRun(onlyFailed, discoverNewTargets, progress = progress) ?: 0
+
+    internal data class TargetSelection(val accountId: String, val targetId: String)
+
+    /** Null means another run owns the lock, even when a successful run would complete zero tasks. */
+    internal suspend fun tryRun(
+        onlyFailed: Boolean,
+        discoverNewTargets: Boolean,
+        selection: TargetSelection? = null,
+        progress: (RunProgress) -> Unit = {}
+    ): Int? {
+        if (!mutex.tryLock()) return null
         try {
             val snapshot = store.read()
             val accounts = Semaphore(snapshot.settings.concurrency.coerceIn(1,8))
+            val selectedAccounts = snapshot.accounts.filter { selection == null || it.id == selection.accountId }
             // Discover new default tasks even when an old account currently has no selected/retriable target.
-            val work = coroutineScope { snapshot.accounts.map { account -> async(Dispatchers.IO) {
-                accounts.withPermit { prepareAccount(snapshot, account, onlyFailed, discoverNewTargets) }
+            val work = coroutineScope { selectedAccounts.map { account -> async(Dispatchers.IO) {
+                accounts.withPermit {
+                    prepareAccount(snapshot, account, onlyFailed, discoverNewTargets && selection == null, selection?.targetId)
+                }
             } }.awaitAll() }.filter { it.targets.isNotEmpty() }
             val reporter = ProgressReporter(work.sumOf { it.targets.size }, progress)
             reporter.publish()
@@ -47,9 +61,13 @@ class Runner(private val store: StateStore, private val adapters: Map<Platform,P
 
     private data class AccountPlan(val account: Account, val targets: List<Target>, val currentTargetIds: Set<String>, val validation: TaskResult?)
 
-    private suspend fun prepareAccount(snapshot: AppState, account: Account, onlyFailed: Boolean, discoverNewTargets: Boolean): AccountPlan {
+    private suspend fun prepareAccount(
+        snapshot: AppState, account: Account, onlyFailed: Boolean, discoverNewTargets: Boolean, targetId: String?
+    ): AccountPlan {
         currentCoroutineContext().ensureActive()
-        val selected = account.targets.filter { it.bound && it.id in account.enabled }.filter { target ->
+        val selected = account.targets.filter {
+            it.bound && (if (targetId == null) it.id in account.enabled else it.id == targetId)
+        }.filter { target ->
             !onlyFailed || Rules.retryable(Rules.latest(snapshot,account,target)?.status)
         }
         if (!discoverNewTargets && selected.isEmpty()) return AccountPlan(account, emptyList(), emptySet(), null)

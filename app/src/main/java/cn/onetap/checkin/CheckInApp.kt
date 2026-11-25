@@ -44,9 +44,19 @@ class CheckInApp : Application() {
     suspend fun execute(failedOnly: Boolean = false): Boolean =
         execute(failedOnly, discoverNewTargets = true)
 
+    suspend fun recheck(accountId: String, targetId: String): Boolean =
+        executeRun(failedOnly = false, discoverNewTargets = false, selection = Runner.TargetSelection(accountId, targetId))
+
     internal suspend fun execute(
         failedOnly: Boolean,
         discoverNewTargets: Boolean,
+        onNewRecords: ((List<Record>) -> Unit)? = null
+    ): Boolean = executeRun(failedOnly, discoverNewTargets, onNewRecords = onNewRecords)
+
+    private suspend fun executeRun(
+        failedOnly: Boolean,
+        discoverNewTargets: Boolean,
+        selection: Runner.TargetSelection? = null,
         onNewRecords: ((List<Record>) -> Unit)? = null
     ): Boolean {
         if(storageError.isNotEmpty() || !busy.compareAndSet(false,true)) return false
@@ -54,13 +64,15 @@ class CheckInApp : Application() {
         var before: Set<String>? = null
         try {
             if (onNewRecords != null) before = store.read().records.mapTo(hashSetOf()) { it.id }
-            runner.run(failedOnly, discoverNewTargets) {
+            val completed = runner.tryRun(failedOnly, discoverNewTargets, selection) {
                 runProgress.value=it; progress.value=it.last
                 val now=System.nanoTime()
                 if(lastRefresh==null || now-lastRefresh!! >= 200_000_000L) {
                     refresh(); lastRefresh=now
                 }
             }
+            if (completed == null) before = null
+            return completed != null
         } finally {
             runProgress.value = null
             progress.value = ""
@@ -69,7 +81,6 @@ class CheckInApp : Application() {
                 if (before != null) onNewRecords?.invoke(state.value.records.filter { it.id !in before })
             } finally { busy.value = false }
         }
-        return true
     }
     fun schedule(settings: Settings) = scheduler.apply(settings)
     fun notifyResult() {

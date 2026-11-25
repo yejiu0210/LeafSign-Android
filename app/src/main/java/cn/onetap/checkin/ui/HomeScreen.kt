@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import cn.onetap.checkin.core.*
+import cn.onetap.checkin.platform.HeyboxAdapter
 import cn.onetap.checkin.theme.LocalThemePalette
 import java.time.LocalDate
 
@@ -234,7 +235,12 @@ private fun AccountBlock(a: Account, state: AppState, clockTick: Long, open: Boo
         // 贴吧吧多，首页只放汇总，各吧详情进二级页面看
         if (a.platform == Platform.TIEBA && rows.isNotEmpty()) TiebaSummary(a, rows)
         val shown = if (a.platform == Platform.TIEBA) emptyList() else if (open || rows.size <= COLLAPSED_ROWS + 1) rows else rows.take(COLLAPSED_ROWS)
-        shown.forEach { (t, status, record) -> TargetRow(targetLabel(t), t.id, status, record) }
+        shown.forEach { (t, status, record) ->
+            TargetRow(targetLabel(t), t.id, status, record)
+            // 小黑盒只能靠打开 App 签到：没签上时给一个跳转按钮
+            if (t.id == HeyboxAdapter.TARGET_ID && bucketOf(status) != Bucket.DONE && a.credential.isNotBlank())
+                HeyboxOpenAppButton(a.id, t.id)
+        }
         if (a.platform != Platform.TIEBA && rows.size > COLLAPSED_ROWS + 1) {
             Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { onToggle(!open) }.padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {

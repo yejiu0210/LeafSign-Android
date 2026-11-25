@@ -8,9 +8,9 @@ import cn.onetap.checkin.core.Platform
 import cn.onetap.checkin.core.Runner
 import cn.onetap.checkin.core.StateStore
 import cn.onetap.checkin.core.Target
+import cn.onetap.checkin.core.TaskResult
 import cn.onetap.checkin.core.TaskStatus
 import kotlinx.coroutines.runBlocking
-import org.json.JSONException
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -28,7 +28,6 @@ class HeyboxAdapterTest {
     private fun task(state: String) =
         JSONObject("""{"status":"ok","result":{"task_list":[{"tasks":[{"type":"sign","state":"$state"}]}]}}""")
 
-    private fun write(state: String) = JSONObject("""{"status":"ok","result":{"state":"$state"}}""")
     private fun rejected(status: String) = JSONObject().put("status", status)
     private fun store() = MemoryStore(AppState(accounts = listOf(Account(
         id = "account", platform = Platform.HEYBOX, userId = "123", displayName = "测试用户",
@@ -46,7 +45,6 @@ class HeyboxAdapterTest {
     @Test fun webSignatureMatchesHistoricalOfficialJavaScriptVectors() {
         assertEquals("YZP3V05", HeyboxWebSigning.sign(HeyboxAdapter.TASK_PATH, 1792200000, "0123456789ABCDEF0123456789ABCDEF"))
         assertEquals("D7YIU46", HeyboxWebSigning.sign(HeyboxAdapter.IDENTITY_PATH, 1792200000, "FEDCBA9876543210FEDCBA9876543210"))
-        assertEquals("DDWS724", HeyboxWebSigning.sign(HeyboxAdapter.SIGN_PATH, 1792200000, "00000000000000000000000000000000"))
         assertEquals(HeyboxWebSigning.sign(HeyboxAdapter.TASK_PATH, 1792200000, "ABC"),
             HeyboxWebSigning.sign("//task///list_v2", 1792200000, "ABC"))
     }
@@ -132,21 +130,21 @@ class HeyboxAdapterTest {
             } else {
                 // Check persistence inside the first task request, before it can use the new session.
                 assertTrue(store.read().accounts.single().credential.contains("pkey=$serverPkey;"))
-                when (path) {
-                    HeyboxAdapter.TASK_PATH -> task(if (signed) "finish" else "todo")
-                    HeyboxAdapter.SIGN_PATH -> { signed = true; write("success") }
-                    else -> error("Unexpected endpoint")
-                }
+                assertEquals(HeyboxAdapter.TASK_PATH, path)
+                task(if (signed) "finish" else "todo")
             }
         }
         val runner = Runner(store, mapOf(adapter.platform to adapter))
-        assertEquals(1, runner.run())
-        assertEquals(listOf(HeyboxAdapter.IDENTITY_PATH, HeyboxAdapter.TASK_PATH, HeyboxAdapter.TASK_PATH,
-            HeyboxAdapter.SIGN_PATH, HeyboxAdapter.TASK_PATH), paths)
+        assertEquals(0, runner.run())
+        assertEquals(listOf(HeyboxAdapter.IDENTITY_PATH, HeyboxAdapter.TASK_PATH, HeyboxAdapter.TASK_PATH), paths)
         assertEquals(1, rotations)
-        assertEquals(TaskStatus.SUCCESS, store.read().records.single().status)
+        val first = store.read().records.single()
+        assertEquals(TaskStatus.MANUAL, first.status)
+        assertEquals("打开小黑盒 App 即可签到", first.message)
+        assertEquals("heybox open app required", first.diagnostic)
 
         paths.clear()
+        signed = true
         assertEquals(1, runner.run())
         assertEquals(listOf(HeyboxAdapter.IDENTITY_PATH, HeyboxAdapter.TASK_PATH), paths)
         assertEquals(2, rotations)
@@ -193,16 +191,23 @@ class HeyboxAdapterTest {
         assertEquals(listOf(HeyboxAdapter.TASK_PATH), paths)
     }
 
-    @Test fun completedUnknownAndExpiredTasksNeverTriggerWrites() {
-        val cases = listOf(task("finish") to TaskStatus.ALREADY, task("unknown") to TaskStatus.UNKNOWN,
-            rejected("login") to TaskStatus.EXPIRED, rejected("relogin") to TaskStatus.EXPIRED,
-            rejected("show_captcha") to TaskStatus.MANUAL)
+    @Test fun executeOnlyReadsTheTaskList() {
+        val cases = listOf(
+            task("todo") to TaskResult(TaskStatus.MANUAL, "打开小黑盒 App 即可签到", "heybox open app required"),
+            task("finish") to TaskResult(TaskStatus.ALREADY, "今日已签到"),
+            task("unknown") to TaskResult(TaskStatus.UNKNOWN, "结果未确认，请稍后重试", "heybox missing or unrecognized sign state"),
+            rejected("login") to TaskResult(TaskStatus.EXPIRED, "登录已失效，请重新扫码登录", "heybox auth required"),
+            rejected("relogin") to TaskResult(TaskStatus.EXPIRED, "登录已失效，请重新扫码登录", "heybox auth required"),
+            rejected("show_captcha") to TaskResult(TaskStatus.MANUAL, "请在小黑盒完成验证后重试", "heybox manual verification required")
+        )
         for ((response, expected) in cases) {
+            val paths = mutableListOf<String>()
             val adapter = HeyboxAdapter { path, _, _ ->
-                assertEquals(HeyboxAdapter.TASK_PATH, path)
+                paths += path
                 response
             }
-            assertEquals(expected, adapter.execute(cookie, target).status)
+            assertEquals(expected, adapter.execute(cookie, target))
+            assertEquals(listOf(HeyboxAdapter.TASK_PATH), paths)
         }
     }
 
@@ -213,131 +218,22 @@ class HeyboxAdapterTest {
         for (raw in invalid) assertEquals(TaskStatus.UNKNOWN, HeyboxAdapter.parseTaskState(JSONObject(raw)).status)
     }
 
-    @Test fun writeSuccessWithoutReadbackConfirmationRemainsUnknown() {
-        val paths = mutableListOf<String>()
-        val pauses = mutableListOf<Long>()
-        val adapter = HeyboxAdapter(pause = { pauses += it }) { path, _, _ ->
-            paths += path
-            when (path) {
-                HeyboxAdapter.TASK_PATH -> task("todo")
-                HeyboxAdapter.SIGN_PATH -> write("success")
-                else -> error("Unexpected endpoint")
-            }
+    @Test fun taskListHttpAuthenticationAndUnknownRedirectKeepTheirClassification() {
+        val unauthorized = HeyboxAdapter { path, _, _ ->
+            assertEquals(HeyboxAdapter.TASK_PATH, path)
+            throw HttpStatusException(401, TaskStatus.EXPIRED, "登录已失效")
         }
-        val result = adapter.execute(cookie, target)
-        assertEquals(TaskStatus.UNKNOWN, result.status)
-        assertEquals("heybox sign still pending after write", result.diagnostic)
-        assertEquals(listOf(HeyboxAdapter.TASK_PATH, HeyboxAdapter.SIGN_PATH) + List(4) { HeyboxAdapter.TASK_PATH }, paths)
-        assertEquals(listOf(1000L, 1500L, 2500L), pauses)
-    }
-
-    @Test fun secondReadbackConfirmsSignWithoutAnotherWrite() {
-        val paths = mutableListOf<String>()
-        val pauses = mutableListOf<Long>()
-        var reads = 0
-        val adapter = HeyboxAdapter(pause = { pauses += it }) { path, _, _ ->
-            paths += path
-            when (path) {
-                HeyboxAdapter.TASK_PATH -> task(if (++reads == 3) "finish" else "todo")
-                HeyboxAdapter.SIGN_PATH -> write("success")
-                else -> error("Unexpected endpoint")
-            }
-        }
-        assertEquals(TaskStatus.SUCCESS, adapter.execute(cookie, target).status)
-        assertEquals(listOf(HeyboxAdapter.TASK_PATH, HeyboxAdapter.SIGN_PATH,
-            HeyboxAdapter.TASK_PATH, HeyboxAdapter.TASK_PATH), paths)
-        assertEquals(listOf(1000L), pauses)
-    }
-
-    @Test fun readbackContinuesAfterNetworkAndParsingErrors() {
-        var reads = 0
-        var writes = 0
-        val adapter = HeyboxAdapter(pause = {}) { path, _, _ ->
-            when (path) {
-                HeyboxAdapter.TASK_PATH -> when (++reads) {
-                    1 -> task("todo")
-                    2 -> throw IOException("fixture timeout")
-                    3 -> throw JSONException("fixture parse error")
-                    4 -> JSONObject().put("status", "ok")
-                    else -> task("finish")
-                }
-                HeyboxAdapter.SIGN_PATH -> { writes++; write("success") }
-                else -> error("Unexpected endpoint")
-            }
-        }
-        assertEquals(TaskStatus.SUCCESS, adapter.execute(cookie, target).status)
-        assertEquals(5, reads)
-        assertEquals(1, writes)
-    }
-
-    @Test fun unconfirmedSignResponseDiagnosticsKeepOnlySafeStatusOrState() {
-        val cases = listOf(
-            rejected("failed") to "heybox sign status=failed",
-            rejected("失败") to "heybox sign status=other",
-            rejected("a".repeat(33)) to "heybox sign status=other",
-            write("retry_2") to "heybox sign state=retry_2",
-            write("a".repeat(32)) to "heybox sign state=${"a".repeat(32)}",
-            write("FAIL") to "heybox sign state=other"
-        )
-        for ((response, expected) in cases) {
-            response.put("msg", "private fixture text")
-            val adapter = HeyboxAdapter(pause = {}) { path, _, _ ->
-                when (path) {
-                    HeyboxAdapter.TASK_PATH -> task("todo")
-                    HeyboxAdapter.SIGN_PATH -> response
-                    else -> error("Unexpected endpoint")
-                }
-            }
-            val result = adapter.execute(cookie, target)
-            assertEquals(TaskStatus.UNKNOWN, result.status)
-            assertEquals(expected, result.diagnostic)
-        }
-    }
-
-    @Test fun ambiguousWriteReportsOnlyConfirmedTaskCompletion() {
-        for (response in listOf(rejected("failed"), write("ignore"), write("fail"), write("unknown"))) {
-            var reads = 0
-            val adapter = HeyboxAdapter { path, _, _ ->
-                when (path) {
-                    HeyboxAdapter.TASK_PATH -> task(if (++reads == 1) "todo" else "finish")
-                    HeyboxAdapter.SIGN_PATH -> response
-                    else -> error("Unexpected endpoint")
-                }
-            }
-            assertEquals(TaskStatus.ALREADY, adapter.execute(cookie, target).status)
-            assertEquals(2, reads)
-        }
-    }
-
-    @Test fun authenticationAndVerificationFailuresStopWithoutFurtherRequests() {
-        val cases = listOf("login" to TaskStatus.EXPIRED, "relogin" to TaskStatus.EXPIRED, "show_captcha" to TaskStatus.MANUAL)
-        for ((status, expected) in cases) {
-            val paths = mutableListOf<String>()
-            val adapter = HeyboxAdapter { path, _, _ ->
-                paths += path
-                if (path == HeyboxAdapter.TASK_PATH) task("todo") else rejected(status)
-            }
-            assertEquals(expected, assertThrows(AdapterException::class.java) { adapter.execute(cookie, target) }.status)
-            assertEquals(listOf(HeyboxAdapter.TASK_PATH, HeyboxAdapter.SIGN_PATH), paths)
-        }
-    }
-
-    @Test fun httpAuthenticationAndUnknownRedirectKeepTheirClassification() {
-        val unauthorized = HeyboxAdapter { _, _, _ -> throw HttpStatusException(401, TaskStatus.EXPIRED, "登录已失效") }
-        val authError = assertThrows(AdapterException::class.java) { unauthorized.query(cookie, target) }
+        val authError = assertThrows(AdapterException::class.java) { unauthorized.execute(cookie, target) }
         assertEquals(TaskStatus.EXPIRED, authError.status)
         assertEquals("登录已失效，请重新扫码登录", authError.message)
         assertEquals("HTTP 401", authError.diagnostic)
 
-        var reads = 0
-        val redirectedWrite = HeyboxAdapter { path, _, _ ->
-            when (path) {
-                HeyboxAdapter.TASK_PATH -> task(if (++reads == 1) "todo" else "finish")
-                HeyboxAdapter.SIGN_PATH -> throw HttpStatusException(302, TaskStatus.UNKNOWN, "结果未确认，请稍后重试")
-                else -> error("Unexpected endpoint")
-            }
+        val redirected = HeyboxAdapter { path, _, _ ->
+            assertEquals(HeyboxAdapter.TASK_PATH, path)
+            throw HttpStatusException(302, TaskStatus.UNKNOWN, "结果未确认，请稍后重试")
         }
-        assertEquals(TaskStatus.ALREADY, redirectedWrite.execute(cookie, target).status)
-        assertEquals(2, reads)
+        val redirectError = assertThrows(AdapterException::class.java) { redirected.execute(cookie, target) }
+        assertEquals(TaskStatus.UNKNOWN, redirectError.status)
+        assertEquals("HTTP 302", redirectError.diagnostic)
     }
 }

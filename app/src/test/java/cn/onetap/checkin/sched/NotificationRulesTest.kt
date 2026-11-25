@@ -1,10 +1,34 @@
 package cn.onetap.checkin.sched
 
+import cn.onetap.checkin.core.Platform
+import cn.onetap.checkin.core.Record
+import cn.onetap.checkin.core.TaskStatus
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.OffsetDateTime
 
 class NotificationRulesTest {
+    @Test fun onlyAutomaticRunsWithANewHeyboxOpenAppRecordNeedAReminder() {
+        val manual = Record(accountId = "account", platform = Platform.HEYBOX, accountLabel = "fixture",
+            targetId = "heybox:daily", task = "fixture", period = "2026-11-25", status = TaskStatus.MANUAL,
+            message = "打开小黑盒 App 即可签到", diagnostic = "heybox open app required")
+        val otherRecords = listOf(
+            manual.copy(status = TaskStatus.ALREADY),
+            manual.copy(diagnostic = "heybox manual verification required"),
+            manual.copy(platform = Platform.SKLAND),
+            manual.copy(targetId = "other")
+        )
+        for (source in listOf("alarm", "backup", "shizuku", "catchup", "retry")) {
+            assertFalse(needsHeyboxReminder(source, emptyList()))
+            assertFalse(needsHeyboxReminder(source, otherRecords))
+            assertTrue(needsHeyboxReminder(source, otherRecords + manual))
+            assertEquals(0, newRetryableItemCount(source, listOf(manual)))
+        }
+        for (source in listOf("test", "manual", "external")) {
+            assertFalse(needsHeyboxReminder(source, listOf(manual)))
+        }
+    }
+
     @Test fun everySkipIsSilentRegardlessOfSwitchAndFailureBudget() {
         val summaries = listOf("跳过：今天已执行", "跳过：正在执行", "跳过：未开启自动签到",
             "跳过：90 秒内没有可用网络，稍后由备份任务补跑", "跳过：暂无网络，下次整点再试")

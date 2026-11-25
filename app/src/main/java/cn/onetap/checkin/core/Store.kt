@@ -136,6 +136,9 @@ object Rules {
         TaskStatus.ALREADY -> "今日点赞任务已完成"
         TaskStatus.PENDING -> "待点赞"
         else -> status.title
+    } else if (targetId == "heybox:daily" && status in setOf(TaskStatus.MANUAL, TaskStatus.PENDING)) {
+        // 小黑盒只能打开 App 签到，没签时提示去打开，而不是泛泛的「需要手动验证」
+        "待打开 App"
     } else status.title
     fun safeMessage(value: String, credential: String): String {
         var text = value
